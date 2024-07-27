@@ -1,0 +1,13 @@
+data
+output
+tags
+.vscode
+.CondaPkg
+.env
+.venv
+.rca
+datasets
+datasets*
+*.zip
+*.gz
+*.tzg
