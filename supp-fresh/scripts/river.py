@@ -4,11 +4,11 @@ import networkx
 import numpy
 import pandas
 
-from gcm import InvertibleStructuralCausalModel, EmpiricalDistribution, AdditiveNoiseModel, fit, \
+from dowhy.gcm import InvertibleStructuralCausalModel, EmpiricalDistribution, AdditiveNoiseModel, fit, \
     MeanDeviationScorer, ITAnomalyScorer, attribute_anomalies
-from gcm.anomaly import conditional_anomaly_score
-from gcm.graph import get_ordered_predecessors
-from gcm.ml import create_linear_regressor_with_given_parameters
+from dowhy.gcm.anomaly import conditional_anomaly_score
+from dowhy.gcm.graph import get_ordered_predecessors
+from dowhy.gcm.ml import create_linear_regressor_with_given_parameters
 
 variables = ['hodder_place', 'henthorn', 'new_jumbles_rock', 'whalley_weir']
 

@@ -9,10 +9,10 @@ from tqdm import tqdm
 
 from rca_helper import summarize_result, random_linear_dag_generator, get_noise_coefficient, evaluate_results_ndcg, \
     naive_approach, our_approach_rankings, draw_anomaly_samples
-from gcm import fit, is_root_node, EmpiricalDistribution, AdditiveNoiseModel, draw_samples
-from gcm._noise import get_noise_dependent_function
-from gcm.config import disable_progress_bars
-from gcm.ml import create_linear_regressor
+from dowhy.gcm import fit, is_root_node, EmpiricalDistribution, AdditiveNoiseModel, draw_samples
+from dowhy.gcm._noise import get_noise_dependent_function
+from dowhy.gcm.config import disable_progress_bars
+from dowhy.gcm.ml import create_linear_regressor
 
 
 # Mostly copied code from the other experiment.
