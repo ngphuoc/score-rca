@@ -1,7 +1,7 @@
 include("imports.jl")
 using Revise
 using DataFrames, Distributions, BayesNets, CSV, Tables
-using BayesNets: plot
+using BayesNets: plot, name
 using DataFrames: index
 using Graphs, GraphPlot
 
@@ -34,6 +34,7 @@ end
 
 function fit_dag!(bn::BayesNet{CPD}, normal_samples)
     cpds = map(bn.cpds) do cpd
+        @show typeof(cpd)
         node = name(cpd)
         pa = parents(cpd)
         if length(pa) == 0

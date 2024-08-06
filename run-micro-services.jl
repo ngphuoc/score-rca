@@ -178,8 +178,8 @@ gt_ϵ_scores = @> get_ϵ_rankings() transpose.() vcats
 grad_node = ndcg_score(gt_ϵ_scores, (ϵ .- 0) .* ϵ_scores, k=n_outliers)
 
 scorerpy = ZOutlierScorePy(X[:, end])
-@> scorerpy.score(X[:, end]) float.() mean, std round.(digits=2)
-@> scorerpy.score(Z[:, end]) float.() mean, std round.(digits=2)
+@> scorerpy.score(X[:, end]) collect float.() mean, std round.(digits=2)
+@> scorerpy.score(Z[:, end]) collect float.() mean, std round.(digits=2)
 ref_samples = DataFrame(mat(ϵ0, dims=2), nodes)
 
 function get_node_scores(contributions)

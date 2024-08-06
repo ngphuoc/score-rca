@@ -8,7 +8,7 @@ from sklearn.metrics import ndcg_score
 import dowhy
 from dowhy.gcm import InvertibleStructuralCausalModel, ScipyDistribution, AdditiveNoiseModel, is_root_node, MeanDeviationScorer, draw_samples, PredictionModel
 from dowhy.gcm._noise import compute_noise_from_data, noise_samples_of_ancestors
-# from dowhy.gcm.anomaly import anomaly_score_attributions
+from dowhy.gcm.anomaly import anomaly_score_attributions
 from dowhy.gcm.graph import PARENTS_DURING_FIT, get_ordered_predecessors
 from dowhy.gcm.ml import SklearnRegressionModel
 from dowhy.gcm.util.general import column_stack_selected_numpy_arrays, convert_to_data_frame
