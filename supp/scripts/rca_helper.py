@@ -5,16 +5,16 @@ from scipy import stats
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import ndcg_score
 
-from gcm import InvertibleStructuralCausalModel, ScipyDistribution, AdditiveNoiseModel, is_root_node, \
-    MeanDeviationScorer, draw_samples, PredictionModel
-from gcm._noise import compute_noise_from_data, noise_samples_of_ancestors
-# from gcm.anomaly import anomaly_score_attributions
-from gcm.graph import PARENTS_DURING_FIT, get_ordered_predecessors
-from gcm.ml import SklearnRegressionModel
-from gcm.util.general import column_stack_selected_numpy_arrays, convert_to_data_frame
+import dowhy
+from dowhy.gcm import InvertibleStructuralCausalModel, ScipyDistribution, AdditiveNoiseModel, is_root_node, MeanDeviationScorer, draw_samples, PredictionModel
+from dowhy.gcm._noise import compute_noise_from_data, noise_samples_of_ancestors
+# from dowhy.gcm.anomaly import anomaly_score_attributions
+from dowhy.gcm.graph import PARENTS_DURING_FIT, get_ordered_predecessors
+from dowhy.gcm.ml import SklearnRegressionModel
+from dowhy.gcm.util.general import column_stack_selected_numpy_arrays, convert_to_data_frame
 from scipy.stats import norm
 import numpy as np
-from gcm.shapley import ShapleyApproximationMethods
+from dowhy.gcm.shapley import ShapleyApproximationMethods
 import pickle
 
 # Compute the z-score, and tail probability outlier score.
@@ -206,32 +206,32 @@ def draw_samples_2_bac(causal_graph, num_samples):
     return convert_to_data_frame(drawn_samples), convert_to_data_frame(drawn_noise_samples), lambdas
 
 
-# def our_approach_rankings(causal_dag, target_node, anomaly_samples, target_prediction_method, nodes_order, zscorer, ref_samples, approximation_method):
-#     noise_of_anomaly_samples = compute_noise_from_data(causal_dag, anomaly_samples)
+def our_approach_rankings(causal_dag, target_node, anomaly_samples, target_prediction_method, nodes_order, zscorer, ref_samples, approximation_method):
+    noise_of_anomaly_samples = compute_noise_from_data(causal_dag, anomaly_samples)
 
-#     # node_samples, noise_samples = noise_samples_of_ancestors(causal_dag, target_node, 1000)
-#     # scorer = MeanDeviationScorer()
-#     # scorer.fit(node_samples[target_node].to_numpy())
-#     scorer =  zscorer
-#     noise_samples = ref_samples
-#     shapley_config = gcm.shapley.ShapleyConfig(approximation_method)
-#     attributions = anomaly_score_attributions(noise_of_anomaly_samples[nodes_order].to_numpy(),
-#                                               noise_samples[nodes_order].to_numpy(),
-#                                               lambda x: scorer.score(target_prediction_method(x)),
-#                                               attribute_mean_deviation=False,
-#                                               shapley_config=shapley_config,
-#                                               )
+    # node_samples, noise_samples = noise_samples_of_ancestors(causal_dag, target_node, 1000)
+    # scorer = MeanDeviationScorer()
+    # scorer.fit(node_samples[target_node].to_numpy())
+    scorer =  zscorer
+    noise_samples = ref_samples
+    shapley_config = dowhy.gcm.shapley.ShapleyConfig(approximation_method)
+    attributions = anomaly_score_attributions(noise_of_anomaly_samples[nodes_order].to_numpy(),
+                                              noise_samples[nodes_order].to_numpy(),
+                                              lambda x: scorer.score(target_prediction_method(x)),
+                                              attribute_mean_deviation=False,
+                                              shapley_config=shapley_config,
+                                              )
 
-#     result = []
+    result = []
 
-#     for i in range(attributions.shape[0]):
-#         tmp = {}
-#         for j in range(attributions.shape[1]):
-#             tmp[nodes_order[j]] = attributions[i, j]
+    for i in range(attributions.shape[0]):
+        tmp = {}
+        for j in range(attributions.shape[1]):
+            tmp[nodes_order[j]] = attributions[i, j]
 
-#         result.append(tmp)
+        result.append(tmp)
 
-#     return result
+    return result
 
 
 def naive_approach(causal_dag, nodes_order, anomaly_samples):

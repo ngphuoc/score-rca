@@ -20,10 +20,10 @@ include("random-graph-datasets.jl")
 
 n_nodes = round(Int, min_depth^2 / 3)
 ground_truth_dag, target_node, training_data, ordered_nodes, topo_path = get_data(min_depth, n_nodes)
-sub_nodes = Symbol.(topo_path)
+sub_nodes = Symbol.(collect(topo_path))
 all_nodes = Symbol.(ordered_nodes)
 target = Symbol(target_node)
-d = length(sub_nodes)
+d = length(topo_path)
 g0, v0, i0_ = from_pydigraph(ground_truth_dag, ordered_nodes)
 bn0 = create_model_from_ground_truth_dag(g0, all_nodes, training_data)
 normal_samples = rand(bn0, min_depth*500)
@@ -183,8 +183,8 @@ gt_ϵ_scores = @> get_ϵ_rankings() transpose.() vcats
 grad_node = ndcg_score(gt_ϵ_scores, (ϵ .- ϵ0) .* ϵ_scores, k=n_outliers)
 
 scorerpy = ZOutlierScorePy(X[:, end])
-@> scorerpy.score(X[:, end]) float.() mean, std round.(digits=2)
-@> scorerpy.score(Z[:, end]) float.() mean, std round.(digits=2)
+@> scorerpy.score(X[:, end]) collect float.() mean, std round.(digits=2)
+@> scorerpy.score(Z[:, end]) collect float.() mean, std round.(digits=2)
 ref_samples = DataFrame(mat(ϵ0, dims=2), sub_nodes)
 
 ############ shapley

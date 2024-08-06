@@ -18,3 +18,4 @@ tri = Shape([x1, x1, x2, x1], [y2, y1, y2, y2])
 plot!(tri, fillstyle=:/, lw=0.5, color=:black, lab="Integrated gradient")
 plot!(xticks = ([5, 8], [L"x", L"x'"]), xtickfontsize=11)
 Plots.savefig("fig/tail-prob.svg")
+
