@@ -4,7 +4,7 @@ using Plots
 X, _ = nmoons(Float64, 100, 2, ε=0, d=2)
 scatter(X[1,:], X[2,:], markersize=1.0, legend=:none, color=:black)
 
-X, _ = nmoons(Float64, 100, 2, ε=0, d=2, repulse=(0.5,0.0))
+X, y = nmoons(Float64, 1000, 2, ε=0.25, d=2, repulse=(-0.25,0.0))
 scatter(X[1,:], X[2,:], markersize=1.0, legend=:none, color=:black)
 
 X, _ = nmoons(Float64, 100, 2, ε=0.05, d=2, repulse=(0.5,0.0), translation=[5.0, 0.0])

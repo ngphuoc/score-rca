@@ -14,9 +14,8 @@ end
 """noise-conditioned classifie"""
 
 function NCClassifier(; args)
-    nf = args.model.nf
+    nf = args.nf
     layers = Chain(
-                   flatten,
                    Dense(2, nf * 16, relu),
                    Dense(nf * 16, nf * 8, relu),
                    Dense(nf * 8, nf * 4)
@@ -26,16 +25,15 @@ function NCClassifier(; args)
                         Dense(nf * 4, nf * 2, relu),
                         Dense(nf * 2, nf * 1)
                        )
-    linear = Dense(nf * 5, args.model.classes)
+    linear = Dense(nf * 5, args.classes)
     NCClassifier(nf, layers, cond_layers, linear)
 end
 
-function (m::NCClassifier)(x, cond)
+function (m::NCClassifier)(x, σ_cond)
     @unpack nf, layers, cond_layers, linear = m
-    cond = unsqueeze(cond, 2)
-    cond = cond_layers(cond)
+    σ_cond = cond_layers(σ_cond)
     x = layers(x)
-    x_cond_cat = cat((x, cond), dims=2)
+    x_cond_cat = cat(x, σ_cond, dims=1)
     out = linear(x_cond_cat)
     return out
 end
@@ -49,13 +47,13 @@ end
 
 """simple classifie"""
 function Classifier(; args)
-    nf = args.model.nf
+    nf = args.nf
     layers = Chain(
-                   flatten, Dense(2, nf * 16, relu),
+                   Dense(2, nf * 16, relu),
                    Dense(nf * 16, nf * 8, relu),
                    Dense(nf * 8, nf * 4)
                   )
-    linear = Dense(nf * 4, args.model.classes)
+    linear = Dense(nf * 4, args.classes)
     Classifier(nf, layers, linear)
 end
 
@@ -77,9 +75,9 @@ end
 
 """noise-conditioned score model"""
 function NCScore(; args)
-    nf = args.model.nf
+    nf = args.nf
     layers = Chain(
-                   flatten, Dense(2, nf * 16, relu),
+                   Dense(2, nf * 16, relu),
                    Dense(nf * 16, nf * 8, relu),
                    Dense(nf * 8, nf * 4)
                   )
@@ -89,14 +87,14 @@ function NCScore(; args)
                         Dense(nf * 2, nf * 1)
                        )
     linear = Dense(nf * 5, 2)
+    NCScore(nf, layers, cond_layers, linear)
 end
 
-function (m::NCScore)(x, cond)
+function (m::NCScore)(x, σ_cond)
     @unpack nf, layers, cond_layers, linear = m
-    cond = unsqueeze(cond, 2)
-    cond = cond_layers(cond)
+    σ_cond = cond_layers(σ_cond)
     x = layers(x)
-    x_cond_cat = cat((x, cond), dims=2)
+    x_cond_cat = cat(x, σ_cond, dims=1)
     out = linear(x_cond_cat)
     return out
 end
@@ -111,13 +109,14 @@ end
 """simple score model"""
 function Score(args)
     @unpack nf, layers, linear = m
-    nf = args.model.nf
+    nf = args.nf
     layers = Chain(
-                   flatten, Dense(2, nf * 16, relu),
+                   Dense(2, nf * 16, relu),
                    Dense(nf * 16, nf * 8, relu),
                    Dense(nf * 8, nf * 4)
                   )
     linear = Dense(nf * 4, 2)
+    Score(nf, layers, linear)
 end
 
 function (m::Score)(x)
