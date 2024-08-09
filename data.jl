@@ -7,6 +7,7 @@ using Flux
 using Flux: crossentropy
 using Flux.Data: DataLoader
 using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
+using Plots
 
 args = @env begin
     seed = 1
@@ -21,82 +22,21 @@ function get_data()
     add_edge!(g, 1, 2);
     B = adjacency_matrix(g)
     g
-
-    # create BayesNets
-    cpds = map(1:d) do j
-        ii = parent_indices(B, j)
-        node = v[j]
-        if length(ii) == 0
-            # fit(StaticCPD{Normal}, df_(training_data), node)
-            cpd = StaticCPD(node, Normal(0, 1))
-        else
-            pa = v[ii]
-            # fit(LinearBayesianCPD, df_(training_data), node, pa)
-            # cpd = fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd = fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd.ps[2] = 0.01I(length(pa)) |> Array
-            cpd.ps[end] = 1.0
-            cpd
-        end
-    end
-    bn0 = BayesNet(cpds; use_topo_sort=false)
-    return bn0
-
-    # sample data
-
-    bn0 = create_model_from_ground_truth_dag(g0, v, training_data)
-    normal_samples = rand(bn0, min_depth*500)
-
+    cpds = [
+            LinearGaussianCPD(:X, 0.0, 0.1),
+            LinearGaussianCPD(:Y, [:X], [1.0], 0.0, 0.1)
+           ]
+    bn = BayesNet(cpds; use_topo_sort=false)
+    normal_samples = rand(bn, 1000)
+    bn, normal_samples
 end
 
-function create_model_from_ground_truth_dag(g0, v, training_data)
-    d = length(v)
-    B = adjacency_matrix(g0)
-    g = DiGraph(B)
-    cpds = map(1:d) do j
-        ii = parent_indices(B, j)
-        node = v[j]
-        if length(ii) == 0
-            # fit(StaticCPD{Normal}, df_(training_data), node)
-            cpd = StaticCPD(node, Normal(0, 1))
-        else
-            pa = v[ii]
-            # fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd = fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd.ps[2] = 0.01I(length(pa)) |> Array
-            cpd.ps[end] = 1.0
-            cpd
-        end
-    end
-    bn0 = BayesNet(cpds; use_topo_sort=false)
-    return bn0
-end
+bn0, df = get_data()
+x, y = eachcol(df)
+X = x'
+@≥ X, y Array{Float32}.()
+# scatter(x, y, xlims=(-1,1), ylims=(-1,1))
 
-function fit_dag!(bn::BayesNet{CPD}, normal_samples)
-    cpds = map(bn.cpds) do cpd
-        @show typeof(cpd)
-        node = name(cpd)
-        pa = parents(cpd)
-        if length(pa) == 0
-            fit(StaticCPD{Normal}, normal_samples, node)
-        else
-            fit(LinearBayesianCPD, normal_samples, node, pa)
-        end
-    end
-    bn0 = BayesNet(cpds; use_topo_sort=false)
-    return bn0
-end
+#-- fit model
 
-
-function get_dataset()
-    X, y = nmoons(Float64, n_data, 2, ε=0.25, d=2, repulse=(-0.25,0.0))
-    DataLoader((X, y), batchsize=args.batchsize, shuffle=true)
-end
-
-ds = get_dataset()
-(batch, labels) = ds |> first |> gpu
-classifier_model = NCClassifier(; args) |> to_device;
-score_model = NCScore(; args) |> to_device;
-
-
-
+bn = deepcopy(bn0)
