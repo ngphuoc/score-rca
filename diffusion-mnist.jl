@@ -15,52 +15,7 @@ using Optimisers: Optimisers
 using Dates
 using JLD2
 
-
-"""
-Helper function that computes the *standard deviation* of 𝒫₀ₜ(𝘹(𝘵)|𝘹(0)).
-
-# Notes
-Derived from the Stochastic Differential Equation (SDE):    \n
-                𝘥𝘹 = σᵗ𝘥𝘸,      𝘵 ∈ [0, 1]                   \n
-
-We use properties of SDEs to analytically solve for the stddev
-at time t conditioned on the data distribution. \n
-
-We will be using this all over the codebase for computing our model's loss,
-scaling our network output, and even sampling new images!
-"""
-marginal_prob_std(t, sigma=25.0f0) = sqrt.((sigma .^ (2t) .- 1.0f0) ./ 2.0f0 ./ log(sigma))
-
-struct RandomFourierFeatures{T <: Real, A <: AbstractVector{T}}
-    w::A
-end
-
-@functor RandomFourierFeatures
-Optimisers.trainable(::RandomFourierFeatures) = (;)  # no trainable parameters
-
-"""
-    RandomFourierFeatures(d::Integer, σ::Real)
-
-Create a generator of `d`-dimensional random Fourier features with scale `σ`.
-
-Tancik, Matthew, et al. "Fourier features let networks learn high frequency
-functions in low dimensional domains." Advances in Neural Information Processing
-Systems 33 (2020): 7537-7547.
-"""
-RandomFourierFeatures(d::Integer, σ::Real) = RandomFourierFeatures(d, float(σ))
-
-function RandomFourierFeatures(d::Integer, σ::AbstractFloat)
-    iseven(d) || throw(ArgumentError("dimension must be even"))
-    isfinite(σ) && σ > 0 || throw(ArgumentError("scale must be finite and positive"))
-    return RandomFourierFeatures(randn(typeof(σ), d ÷ 2) * σ)
-end
-
-(rff::RandomFourierFeatures{T})(t::Union{Real, AbstractVector{<: Real}}) where T = rff(convert.(T, t))
-
-function (rff::RandomFourierFeatures{T})(t::Union{T, AbstractVector{T}}) where T <: Real
-    wt = T(2π) .* rff.w .* t'
-    return [cos.(wt); sin.(wt)]
-end
+include("./lib/diffusion.jl")
 
 """
 Create a UNet architecture as a backbone to a diffusion model. \n
@@ -143,26 +98,6 @@ function (unet::UNet)(x, t)
     h ./ expand_dims(marginal_prob_std(t), 3)
 end
 
-expand_dims(x::AbstractVecOrMat, dims::Int=2) = reshape(x, (ntuple(i -> 1, dims)..., size(x)...))
-
-function model_loss(model, x, ϵ=1.0f-5)
-    batch_size = size(x)[end]
-    # (batch) of random times to approximate 𝔼[⋅] wrt. 𝘪 ∼ 𝒰(0, 𝘛)
-    random_t = rand!(similar(x, batch_size)) .* (1.0f0 - ϵ) .+ ϵ
-    # (batch) of perturbations to approximate 𝔼[⋅] wrt. 𝘹(0) ∼ 𝒫₀(𝘹)
-    z = randn!(similar(x))
-    std = expand_dims(marginal_prob_std(random_t), 3)
-    # (batch) of perturbed 𝘹(𝘵)'s to approximate 𝔼 wrt. 𝘹(t) ∼ 𝒫₀ₜ(𝘹(𝘵)|𝘹(0))
-    perturbed_x = x + z .* std
-    # 𝘚₀(𝘹(𝘵), 𝘵)
-    score = model(perturbed_x, random_t)
-    # mean over batches
-    mean(
-        # L₂ norm over WHC dimensions
-        sum((score .* std + z) .^ 2; dims=1:(ndims(x) - 1))
-    )
-end
-
 function get_data(batch_size)
     xtrain, ytrain = MLDatasets.MNIST(:train)[:]
     xtrain = reshape(xtrain, 28, 28, 1, :)
@@ -215,7 +150,7 @@ function train(; kws...)
         for (x, _) in loader
             x = gpu(x)
             loss, grad = Flux.withgradient(ps) do
-                model_loss(unet, x)
+                diffusion_loss(unet, x)
             end
             Flux.Optimise.update!(opt, ps, grad)
             # progress meter

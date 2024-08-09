@@ -40,3 +40,4 @@ X = x'
 #-- fit model
 
 bn = deepcopy(bn0)
+
