@@ -150,7 +150,7 @@ function train(; kws...)
         for (x, _) in loader
             x = gpu(x)
             loss, grad = Flux.withgradient(ps) do
-                diffusion_loss(unet, x)
+                score_matching_loss(unet, x)
             end
             Flux.Optimise.update!(opt, ps, grad)
             # progress meter

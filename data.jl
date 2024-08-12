@@ -23,21 +23,22 @@ function get_data()
     B = adjacency_matrix(g)
     g
     cpds = [
-            LinearGaussianCPD(:X, 0.0, 0.1),
+            LinearGaussianCPD(:X, 0.0, 1.0),
             LinearGaussianCPD(:Y, [:X], [1.0], 0.0, 0.1)
            ]
+    Ef(x) = x
     bn = BayesNet(cpds; use_topo_sort=false)
     normal_samples = rand(bn, 1000)
     bn, normal_samples
+    X, Y = eachcol(normal_samples)
+    @≥ X, Y transpose.() Array{Float32}.()
+    # scatter(x, y, xlims=(-1,1), ylims=(-1,1))
+    #-- fit model
+    bn = deepcopy(bn0)
+    bn, X, Y
 end
 
-bn0, df = get_data()
-x, y = eachcol(df)
-X = x'
-@≥ X, y Array{Float32}.()
-# scatter(x, y, xlims=(-1,1), ylims=(-1,1))
-
-#-- fit model
-
-bn = deepcopy(bn0)
+function Base.getindex(bn::BayesNet, node::Symbol)
+    bn.cpds[findfirst(==(node), names(bn))]
+end
 
