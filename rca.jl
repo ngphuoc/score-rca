@@ -1,15 +1,25 @@
 include("imports.jl")
+
 using Revise
 using DataFrames, Distributions, BayesNets, CSV, Tables
 using BayesNets: plot, name
 using DataFrames: index
 using Graphs, GraphPlot
+using Revise
+using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
+using Optimisers, BSON
+using ProgressMeter: Progress, next!
+using CUDA
+using Flux
+using Flux: gpu, Chain, Dense, relu, DataLoader
+
+include("bayesnets-extra.jl")
 
 function df_(pydf)
     @> pydf PyPandasDataFrame DataFrame
 end
 
-function create_model_from_ground_truth_dag(g0, all_nodes, training_data)
+function create_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
     d = length(all_nodes)
     B = adjacency_matrix(g0)
     g = DiGraph(B)
@@ -22,16 +32,16 @@ function create_model_from_ground_truth_dag(g0, all_nodes, training_data)
         else
             pa = all_nodes[ii]
             # fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd = fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd.ps[2] = 0.01I(length(pa)) |> Array
-            cpd.ps[end] = 1.0
+            cpd = fit(NonlinearGaussianCPD, df_(training_data), node, pa; args)
             cpd
         end
     end
     bn0 = BayesNet(cpds; use_topo_sort=false)
+
     return bn0
 end
 
+learned_dag = fit_dag!(pydeepcopy(ground_truth_dag), pytable(normal_samples))
 function fit_dag!(bn::BayesNet{CPD}, normal_samples)
     cpds = map(bn.cpds) do cpd
         @show typeof(cpd)
@@ -40,7 +50,7 @@ function fit_dag!(bn::BayesNet{CPD}, normal_samples)
         if length(pa) == 0
             fit(StaticCPD{Normal}, normal_samples, node)
         else
-            fit(LinearBayesianCPD, normal_samples, node, pa)
+            fit(NonlinearGaussianCPD, normal_samples, node, pa)
         end
     end
     bn0 = BayesNet(cpds; use_topo_sort=false)
@@ -51,7 +61,7 @@ end
 Use a list of fcms in the topo order to create a BayesSEM
 Also filter observations in the node subset.
 """
-function create_model_from_sub_graph(g0, sub_nodes, all_nodes, df_normal_samples)
+function create_model_from_sub_graph(g0, sub_nodes, all_nodes, df_normal_samples; args)
     d = length(sub_nodes)
     ii = indexin(sub_nodes, all_nodes)
     B = adjacency_matrix(g0)[ii, ii]
@@ -63,7 +73,7 @@ function create_model_from_sub_graph(g0, sub_nodes, all_nodes, df_normal_samples
             fit(StaticCPD{Normal}, df_normal_samples, node)
         else
             pa = sub_nodes[ii]
-            fit(LinearBayesianCPD, df_normal_samples, node, pa)
+            fit(NonlinearGaussianCPD, df_normal_samples, node, pa; args)
         end
     end
     bn = BayesNet(cpds; use_topo_sort=false)
@@ -132,26 +142,15 @@ function get_bayes_sem_W(bn; ξs = zeros_ξs(bn))
     return W, edges
 end
 
-function select_outlier_node_edge(bn0, sub_nodes; n_outlier_nodes, n_outlier_edges)
+function select_outlier_node(bn0, sub_nodes; n_outlier_nodes)
     anomaly_nodes = []
     if n_outlier_nodes > 0
         anomaly_nodes = sample(sub_nodes, n_outlier_nodes, replace=false)
     end
-    anomaly_edges = []
-    if n_outlier_edges > 0
-        root_nodes = sub_nodes[is_root.([bn0], sub_nodes)]
-        non_root_nodes = sub_nodes[.!is_root.([bn0], sub_nodes)]
-        nodes = sample(non_root_nodes, n_outlier_edges, replace=true)  # sample end points
-        for node = nodes
-            j = bn0.name_to_index[node]
-            cpd = bn0.cpds[j]
-            push!(anomaly_edges, (node, rand(1:length(cpd.parents))))  # node j, parent i
-        end
-    end
-    return anomaly_nodes, anomaly_edges
+    return anomaly_nodes
 end
 
-function assign_outlier_noise!(outlier_bn0, anomaly_nodes, anomaly_edges)
+function assign_outlier_noise!(outlier_bn0, anomaly_nodes)
     if length(anomaly_nodes) > 0
         anomaly_cpds = get.([outlier_bn0], anomaly_nodes)
         for cpd in anomaly_cpds
@@ -164,19 +163,6 @@ function assign_outlier_noise!(outlier_bn0, anomaly_nodes, anomaly_edges)
                 cpd.b = rand(Normal(a, b))
             end
         end
-    end
-    for (node, i) in anomaly_edges
-        cpd = get(outlier_bn0, node)
-        a = rand(rand() > .5 ? Uniform(5, 10) : -Uniform(5, 10))
-        b = rand(Uniform(5, 10))
-        # cpd.ps[1][i] = a * maximum(abs.(cpd.ps[1]))
-        cpd.ps[1][i] += a
-        s2 = cpd.ps[2]
-        eig = eigen(s2)
-        Λ = eig.values
-        Q = eig.vectors
-        Λ[i] /= b
-        cpd.ps[2] = Q * diagm(Λ) * Q'
     end
 end
 

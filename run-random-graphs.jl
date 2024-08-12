@@ -2,6 +2,7 @@ using Revise
 include("./imports.jl")
 include("rca.jl")
 using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
+CPDType = NonlinearGaussianCPD
 
 args = @env begin  # get args from environment variables
     min_depth = 10  # minimum depth of ancestors for the target node
@@ -26,6 +27,7 @@ target = Symbol(target_node)
 d = length(topo_path)
 g0, v0, i0_ = from_pydigraph(ground_truth_dag, ordered_nodes)
 bn0 = create_model_from_ground_truth_dag(g0, all_nodes, training_data)
+
 normal_samples = rand(bn0, min_depth*500)
 learned_dag = fit_dag!(pydeepcopy(ground_truth_dag), pytable(normal_samples))
 df_normal_samples = normal_samples[!, sub_nodes]

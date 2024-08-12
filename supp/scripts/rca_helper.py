@@ -3,6 +3,10 @@ import networkx
 import numpy
 from scipy import stats
 from sklearn.linear_model import LinearRegression
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF
+from scipy.special import expit as sigmoid
+
 from sklearn.metrics import ndcg_score
 
 import dowhy
@@ -73,6 +77,71 @@ def random_linear_dag_generator(num_root_nodes, num_downstream_nodes):
 
         causal_mechanism = AdditiveNoiseModel(SklearnRegressionModel(linear_reg),
                                               ScipyDistribution(stats.norm, loc=0, scale=1))
+        causal_dag.set_causal_mechanism(new_child, causal_mechanism)
+
+        for parent in parents:
+            causal_dag.graph.add_edge(parent, new_child)
+
+        causal_dag.graph.nodes[new_child][PARENTS_DURING_FIT] = get_ordered_predecessors(causal_dag.graph, new_child)
+
+        all_nodes.append(new_child)
+
+    return causal_dag
+
+
+
+def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes):
+    print("random_nonlinear_dag_generator\n")
+    def sample_natural_number(init_mass) -> int:
+        current_mass = init_mass
+        probability = numpy.random.uniform(0, 1)
+        k = 1
+
+        is_searching = True
+
+        while is_searching:
+            if probability <= current_mass:
+                return k
+            else:
+                k += 1
+                current_mass += 1 / (k ** 2)
+
+    causal_dag = InvertibleStructuralCausalModel(networkx.DiGraph())
+
+    all_nodes = []
+
+    for i in range(num_root_nodes):
+        random_distribution_obj = ScipyDistribution(stats.norm, loc=0, scale=1)
+
+        new_root = 'X' + str(i).zfill(2)
+        causal_dag.graph.add_node(new_root)
+        causal_dag.set_causal_mechanism(new_root, random_distribution_obj)
+        causal_dag.graph.nodes[new_root][PARENTS_DURING_FIT] = get_ordered_predecessors(causal_dag.graph, new_root)
+
+        all_nodes.append(new_root)
+
+    for i in range(num_downstream_nodes):
+        parents = numpy.random.choice(all_nodes,
+                                      min(sample_natural_number(init_mass=0.6), len(all_nodes)),
+                                      replace=False)
+
+        new_child = 'X' + str(i + num_root_nodes).zfill(2)
+        causal_dag.graph.add_node(new_child)
+
+        # Random mechanism
+        hidden = 10
+        n = 1000
+        z = np.random.normal(scale=0.1, size=n)
+        pa_size = len(parents)
+        X = np.random.randn(n, pa_size)
+        W1 = np.random.uniform(low=0.5, high=2.0, size=[pa_size, hidden])
+        W1[np.random.rand(*W1.shape) < 0.5] *= -1
+        W2 = np.random.uniform(low=0.5, high=2.0, size=hidden)
+        W2[np.random.rand(hidden) < 0.5] *= -1
+        y = sigmoid(X @ W1) @ W2 + z
+        gp = GaussianProcessRegressor().fit(X, y)
+        #
+        causal_mechanism = AdditiveNoiseModel(gp, ScipyDistribution(stats.norm, loc=0, scale=0.1))
         causal_dag.set_causal_mechanism(new_child, causal_mechanism)
 
         for parent in parents:

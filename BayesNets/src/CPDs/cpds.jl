@@ -28,6 +28,8 @@ export
     ParentFunctionalCPD,           # for implementing quick and easy custom CPDs that only use the parents
     CategoricalCPD,                # a table lookup based on discrete parental assignment
     LinearGaussianCPD,             # Normal with linear mean
+    NonlinearGaussianCPD,             # Normal with linear mean
+    NonlinearScoreCPD,             # Normal with linear mean
     LinearBayesianCPD,             # Normal with linear mean
     ConditionalLinearGaussianCPD,  # a LinearGaussianCPD lookup based on discrete parental assignment
     DiscreteCPD,                   # a typealias to CategoricalCPD{Categorical}
@@ -156,6 +158,8 @@ include("functional_cpd.jl")
 include("parent_functional_cpd.jl")
 include("categorical_cpd.jl")
 include("linear_gaussian_cpd.jl")
+include("nonlinear_gaussian_cpd.jl")
+include("nonlinear_core_cpd.jl")
 include("linear_bayesian_cpd.jl")
 include("conditional_linear_gaussian_cpd.jl")
 
