@@ -159,7 +159,7 @@ include("parent_functional_cpd.jl")
 include("categorical_cpd.jl")
 include("linear_gaussian_cpd.jl")
 include("nonlinear_gaussian_cpd.jl")
-include("nonlinear_core_cpd.jl")
+include("nonlinear_score_cpd.jl")
 include("linear_bayesian_cpd.jl")
 include("conditional_linear_gaussian_cpd.jl")
 

@@ -14,12 +14,48 @@ using Flux
 using Flux: gpu, Chain, Dense, relu, DataLoader
 
 include("bayesnets-extra.jl")
+include("group-mlp-unet.jl")
 
 function df_(pydf)
     @> pydf PyPandasDataFrame DataFrame
 end
 
-function create_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
+function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
+    d = length(all_nodes)
+    B = adjacency_matrix(g0)
+    unet = GroupMlpUnet(B) |> gpu
+    X = @> df_(training_data) Array
+    opt = Flux.setup(Optimisers.AdamW(args.lr, (0.9, 0.999), args.decay), unet);
+    # AdamW(η = 0.001, β = (0.9, 0.999), λ = 0, ϵ = 1e-8)
+    loader = DataLoader((X',); args.batchsize, shuffle=true)
+    (x,) = loader |> first
+    t = rand!(similar(x))
+    @≥ x, t gpu.()
+    unet(x, t)
+
+    Flux.mse(unet(x), y)
+    progress = Progress(args.epochs, desc="Fitting FCM for node $(name(cpd))")
+    for epoch = 1:args.epochs
+        total_loss = 0.0
+        for (x, y) = loader
+            @≥ x, y gpu.()
+            # loss = Flux.mse(unet(x), y)
+            loss, (grad,) = Flux.withgradient(unet, ) do unet
+                Flux.mse(unet(x), y)
+            end
+            Flux.update!(opt, unet, grad)
+            total_loss += loss
+        end
+        next!(progress; showvalues=[(:loss, total_loss/length(loader))])
+    end
+
+    return unet
+end
+
+"""
+model_type=NonlinearScoreCPD
+"""
+function create_model_from_ground_truth_dag(g0, all_nodes, training_data; args, model_type=NonlinearGaussianCPD)
     d = length(all_nodes)
     B = adjacency_matrix(g0)
     g = DiGraph(B)
@@ -32,7 +68,7 @@ function create_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
         else
             pa = all_nodes[ii]
             # fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd = fit(NonlinearGaussianCPD, df_(training_data), node, pa; args)
+            cpd = fit(model_type, df_(training_data), node, pa; args)
             cpd
         end
     end
@@ -41,7 +77,7 @@ function create_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
     return bn0
 end
 
-learned_dag = fit_dag!(pydeepcopy(ground_truth_dag), pytable(normal_samples))
+# learned_dag = fit_dag!(pydeepcopy(ground_truth_dag), pytable(normal_samples))
 function fit_dag!(bn::BayesNet{CPD}, normal_samples)
     cpds = map(bn.cpds) do cpd
         @show typeof(cpd)

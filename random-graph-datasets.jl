@@ -8,7 +8,7 @@ include("lib/utils.jl")
 include("lib/graph.jl")
 include("lib/outlier.jl")
 include("rca.jl")
-include("bayesnets.jl")
+include("bayesnets-extra.jl")
 @py import pandas as pd
 
 function get_ground_truth_dag(min_depth, n_nodes)

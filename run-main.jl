@@ -41,7 +41,7 @@ all_nodes = Symbol.(ordered_nodes)
 target = Symbol(target_node)
 d = length(topo_path)
 g0, v0, i0_ = from_pydigraph(ground_truth_dag, ordered_nodes)
-bn0 = create_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
+bn0 = create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
 
 normal_samples = rand(bn0, min_depth*500)
 learned_dag = fit_dag!(pydeepcopy(ground_truth_dag), pytable(normal_samples))

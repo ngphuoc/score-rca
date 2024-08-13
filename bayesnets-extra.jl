@@ -48,7 +48,6 @@ function Distributions.fit(::Type{NonlinearScoreCPD}, df::DataFrame, node::NodeN
                 Dense(H, 1),
                )
     score = MlpUnet(nparents + 1) |> gpu
-
     X = df[!, pa] |> Array;
     Y = df[!, node] |> Vector;
     cpd = NonlinearScoreCPD(node, pa, mlp, score, std(Y)/nparents)

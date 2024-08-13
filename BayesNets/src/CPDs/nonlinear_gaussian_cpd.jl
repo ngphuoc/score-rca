@@ -18,7 +18,7 @@ parents(cpd::NonlinearGaussianCPD) = cpd.parents
 nparams(cpd::NonlinearGaussianCPD) = length(cpd.mlp) + 2
 
 function (cpd::NonlinearGaussianCPD)(x::Assignment)
-    x = @> getindex.([x], cpd.parents) Vector{Float32}
+    x = getindex.([x], cpd.parents) |> Vector{Float32}
     μ = cpd.mlp(x) |> only
     Normal(μ, cpd.σ)
 end
