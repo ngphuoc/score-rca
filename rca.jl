@@ -32,6 +32,9 @@ function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; 
     t = rand!(similar(x))
     @≥ x, t gpu.()
     unet(x, t)
+    loss_mask = @> I + B vec Vector{Bool}  # gradient mask w.r.t. parents and itself
+
+    conditional_score_matching_loss(unet, x, loss_mask)
 
     Flux.mse(unet(x), y)
     progress = Progress(args.epochs, desc="Fitting FCM for node $(name(cpd))")

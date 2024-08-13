@@ -46,7 +46,7 @@ function GroupMlpUnet(adjmat::AbstractMatrix{T}, scale=30.0f0) where {T}
                                d4 = Conv((1,), D*F=>C*F, groups=F),
                                d3 = Conv((2,), C*F=>B*F, groups=F),  # vcat with shortcut connection
                                d2 = Conv((2,), B*F=>A*F, groups=F),
-                               d1 = Conv((2,), A*F=>1*F, groups=F),
+                               d1 = Conv((2,), A*F=>I*F, groups=F),
                                #-- Condition
                                c1 = Conv((1,), E*F=>A*F, groups=F),
                                c2 = Conv((1,), E*F=>B*F, groups=F),
@@ -91,7 +91,8 @@ function (unet::GroupMlpUnet)(x, t)
     h = @> d2(cat(h, h2; dims=1)) .+ c7(t0) g7
     h = @> d1(cat(h, h1; dims=1))
     #-- Scaling Factor
-    h = squeeze(h, 1)
-    h ./ marginal_prob_std(t)
+    @≥ h reshape(F, F, :)
+    σ_t = @> marginal_prob_std(t) unsqueeze(1)  # one t for each node j
+    h ./ σ_t
 end
 
