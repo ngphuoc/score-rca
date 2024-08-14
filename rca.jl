@@ -34,20 +34,31 @@ function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; 
     # AdamW(η = 0.001, β = (0.9, 0.999), λ = 0, ϵ = 1e-8)
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = loader |> first;
-    @≥ x gpu;
-    t = rand!(similar(x));
+    @≥ x gpu unsqueeze(2) repeat(1, d, 1)
+
     conditional_score_matching_loss(mlp, unet, x, paj_mask)
 
-    loss, (grad,) = Flux.withgradient(unet, ) do unet
-        conditional_score_matching_loss(mlp, unet, x, paj_mask)
-    end
-
+    #-- Train mlp
     progress = Progress(args.epochs, desc="Fitting unet")
     for epoch = 1:args.epochs
         total_loss = 0.0
         for (x,) = loader
-            @≥ x gpu;
-            t = rand!(similar(x));
+            @≥ x gpu unsqueeze(2) repeat(1, d, 1)
+            loss, (grad,) = Flux.withgradient(unet, ) do unet
+                conditional_score_matching_loss(mlp, unet, x, paj_mask)
+            end
+            Flux.update!(opt, unet, grad)
+            total_loss += loss
+        end
+        next!(progress; showvalues=[(:loss, total_loss/length(loader))])
+    end
+
+    #-- Train unet
+    progress = Progress(args.epochs, desc="Fitting unet")
+    for epoch = 1:args.epochs
+        total_loss = 0.0
+        for (x,) = loader
+            @≥ x gpu unsqueeze(2) repeat(1, d, 1)
             loss, (grad,) = Flux.withgradient(unet, ) do unet
                 conditional_score_matching_loss(mlp, unet, x, paj_mask)
             end
