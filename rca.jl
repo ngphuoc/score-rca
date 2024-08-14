@@ -25,6 +25,8 @@ end
 function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
     d = length(all_nodes)
     B = adjacency_matrix(g0)
+    # paj_mask = @> B Matrix{Bool} gpu
+    paj_mask = @> B Matrix{Float32} gpu
     unet = GroupMlpUnet(B) |> gpu
     mlp = GroupMlpRegression(B) |> gpu
     X = @> df_(training_data) Array;
@@ -32,23 +34,22 @@ function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; 
     # AdamW(η = 0.001, β = (0.9, 0.999), λ = 0, ϵ = 1e-8)
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = loader |> first;
+    @≥ x gpu;
     t = rand!(similar(x));
-    @≥ x, t gpu.();
-    # unet(x, t)
-    # mlp(x)
-    paj_mask = B
-
     conditional_score_matching_loss(mlp, unet, x, paj_mask)
 
-    Flux.mse(unet(x), y)
-    progress = Progress(args.epochs, desc="Fitting FCM for node $(name(cpd))")
+    loss, (grad,) = Flux.withgradient(unet, ) do unet
+        conditional_score_matching_loss(mlp, unet, x, paj_mask)
+    end
+
+    progress = Progress(args.epochs, desc="Fitting unet")
     for epoch = 1:args.epochs
         total_loss = 0.0
-        for (x, y) = loader
-            @≥ x, y gpu.()
-            # loss = Flux.mse(unet(x), y)
+        for (x,) = loader
+            @≥ x gpu;
+            t = rand!(similar(x));
             loss, (grad,) = Flux.withgradient(unet, ) do unet
-                Flux.mse(unet(x), y)
+                conditional_score_matching_loss(mlp, unet, x, paj_mask)
             end
             Flux.update!(opt, unet, grad)
             total_loss += loss

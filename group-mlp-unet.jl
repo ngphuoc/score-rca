@@ -18,7 +18,7 @@ include("lib/nn.jl")
 include("lib/nnlib.jl")
 
 struct GroupMlpUnet
-    mask::AbstractVector{Bool}
+    mask::AbstractMatrix{Bool}
     layers::NamedTuple
 end
 
@@ -32,7 +32,7 @@ function GroupMlpUnet(adjmat::AbstractMatrix{T}, scale=30.0f0) where {T}
     paj_mask = adjmat
     j_mask = I(F)
     @≥ j_mask, paj_mask Matrix{Bool}.()
-    mask = max.(j_mask, paj_mask) |> vec
+    mask = max.(j_mask, paj_mask)
     return GroupMlpUnet(mask, (
                                embed = Chain(
                                              vec,
@@ -71,19 +71,20 @@ end
 
 """
 One t_j for each x_j, x and t have the same size
+Parallel by groups
 """
-function (unet::GroupMlpUnet)(x::AbstractArray{T, 3}, t::AbstractArray{T, 2}) where T
+function (unet::GroupMlpUnet)(x::AbstractArray{T, 3}, t::AbstractArray{T, 3}) where T
     @unpack e1, e2, e3, e4, d4, d3, d2, d1, c1, c2, c3, c4, c5, c6, c7, g1, g2, g3, g4, g5, g6, g7 = unet.layers
+    mask = @> unet.mask vec unsqueeze(1)
     #-- Embedding
     embed = unet.layers.embed(t)
-    mask = @> unet.mask unsqueeze(1)
-    F = size(x, 1)
-    @≥ x reshape(1, F*F, :)
     #-- Encoder
+    X = size(x, 1)
+    @≥ x reshape(1, X*X, :)
     x0 = x .* mask
     t0 = embed .* mask
     # mask |> printmask
-    @assert size(x0)[1:2] == size(t0)[1:2] == (1, F*F)
+    @assert size(x0)[1:2] == size(t0)[1:2] == (1, X*X)
     h1 = @> e1(x0) .+ c1(t0) g1
     h2 = @> e2(h1) .+ c2(t0) g2
     h3 = @> e3(h2) .+ c3(t0) g3
@@ -94,35 +95,8 @@ function (unet::GroupMlpUnet)(x::AbstractArray{T, 3}, t::AbstractArray{T, 2}) wh
     h = @> d2(cat(h, h2; dims=1)) .+ c7(t0) g7
     h = @> d1(cat(h, h1; dims=1))
     #-- Scaling Factor
-    h = @> mask .* h reshape(F, F, :)
-    σ_t = @> marginal_prob_std(t) unsqueeze(1)  # one t for each node j
+    h = @> mask .* h reshape(X, X, :)
+    σ_t = marginal_prob_std(t)
     h ./ σ_t
 end
-
-#function (unet::GroupMlpUnet)(x::AbstractMatrix, t)
-#    @unpack e1, e2, e3, e4, d4, d3, d2, d1, c1, c2, c3, c4, c5, c6, c7, g1, g2, g3, g4, g5, g6, g7 = unet.layers
-#    #-- Embedding
-#    embed = unet.layers.embed(t)
-#    mask = unet.mask
-#    F = size(x, 1)
-#    #-- Preprocess x, t, mask
-#    @≥ x, mask unsqueeze.(1)
-#    @≥ x repeat(outer=(1, F, 1))  # shape (1, I*F, :)
-#    #-- Encoder
-#    x0 = x .* mask
-#    t0 = embed .* mask
-#    h1 = @> e1(x0) .+ c1(t0) g1
-#    h2 = @> e2(h1) .+ c2(t0) g2
-#    h3 = @> e3(h2) .+ c3(t0) g3
-#    h4 = @> e4(h3) .+ c4(t0) g4
-#    #-- Decoder
-#    h = @> d4(h4) .+ c5(t0) g5
-#    h = @> d3(cat(h, h3; dims=1)) .+ c6(t0) g6
-#    h = @> d2(cat(h, h2; dims=1)) .+ c7(t0) g7
-#    h = @> d1(cat(h, h1; dims=1))
-#    #-- Scaling Factor
-#    @≥ h reshape(F, F, :)
-#    σ_t = @> marginal_prob_std(t) unsqueeze(1)  # one t for each node j
-#    h ./ σ_t
-#end
 
