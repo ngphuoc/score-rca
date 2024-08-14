@@ -15,6 +15,8 @@ using Flux: gpu, Chain, Dense, relu, DataLoader
 
 include("bayesnets-extra.jl")
 include("group-mlp-unet.jl")
+include("group-mlp-regression.jl")
+include("lib/diffusion.jl")
 
 function df_(pydf)
     @> pydf PyPandasDataFrame DataFrame
@@ -24,17 +26,19 @@ function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; 
     d = length(all_nodes)
     B = adjacency_matrix(g0)
     unet = GroupMlpUnet(B) |> gpu
-    X = @> df_(training_data) Array
+    mlp = GroupMlpRegression(B) |> gpu
+    X = @> df_(training_data) Array;
     opt = Flux.setup(Optimisers.AdamW(args.lr, (0.9, 0.999), args.decay), unet);
     # AdamW(η = 0.001, β = (0.9, 0.999), λ = 0, ϵ = 1e-8)
     loader = DataLoader((X',); args.batchsize, shuffle=true)
-    (x,) = loader |> first
-    t = rand!(similar(x))
-    @≥ x, t gpu.()
-    unet(x, t)
-    loss_mask = @> I + B vec Vector{Bool}  # gradient mask w.r.t. parents and itself
+    (x,) = loader |> first;
+    t = rand!(similar(x));
+    @≥ x, t gpu.();
+    # unet(x, t)
+    # mlp(x)
+    paj_mask = B
 
-    conditional_score_matching_loss(unet, x, loss_mask)
+    conditional_score_matching_loss(mlp, unet, x, paj_mask)
 
     Flux.mse(unet(x), y)
     progress = Progress(args.epochs, desc="Fitting FCM for node $(name(cpd))")
