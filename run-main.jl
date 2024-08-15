@@ -13,17 +13,18 @@ args = @env begin
     scale=30.0f0  # RandomFourierFeatures scale
     σ_max = 5.0
     σ_min = 1e-3
-    lr = 3e-3  # learning rate
+    lr = 1e-4  # learning rate
     decay = 1e-5  # weight decay parameter for AdamW
     to_device = gpu
     batchsize = 32
-    epochs = 500
-    save_path = "output"
-    model_file = "2d-joint.bson"
+    epochs = 300
+    save_path = "data/exp0.bson"
+    load_path = ""
+    pkl_path = "data/exp0.pkl"
     # RCA
     min_depth = 3  # minimum depth of ancestors for the target node
     n_root_nodes = 3  # num_root_nodes
-    n_samples = 1000  # n observations
+    n_samples = 500  # n observations
     n_outlier_samples = 8  # n faulty observations
     has_node_outliers = true  # node outlier setting
     n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
@@ -33,15 +34,47 @@ end
 
 #--  CREATE DATASETS
 
-n_nodes = round(Int, min_depth^2 / 3 + 2)
-ground_truth_dag, target_node, training_data, ordered_nodes, topo_path = get_data(min_depth, n_nodes)
+if !isempty(strip(args.load_path))
+    @info "Loading data and models from path" args.load_path args.pkl_path
+    #-- py data
+    dic = pickle_load(args.pkl_path)
+    ground_truth_dag, target_node, training_data, ordered_nodes, topo_path = dic
+    #-- jl data
+    BSON.@load args.load_path args sub_nodes all_nodes target g0 v0 train_df mlp unet
 
-sub_nodes = Symbol.(collect(topo_path))
-all_nodes = Symbol.(ordered_nodes)
-target = Symbol(target_node)
-d = length(topo_path)
-g0, v0, i0_ = from_pydigraph(ground_truth_dag, ordered_nodes)
-bn0 = create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
+else
+    @info "Creating new data and training new models"
+    #-- py data
+    n_nodes = round(Int, min_depth^2 / 3 + 1)
+    ground_truth_dag, target_node, training_data, ordered_nodes, topo_path = get_data(min_depth, n_nodes)
+
+    #-- jl data
+    sub_nodes = Symbol.(collect(topo_path))
+    all_nodes = Symbol.(collect(ordered_nodes))
+    target = Symbol(target_node)
+    g0, v0 = from_pydigraph(ground_truth_dag, ordered_nodes)
+    i0(node) = i2(node, v0)
+    train_df = df_(training_data)
+
+    #-- train models
+    mlp, unet = create_score_model_from_ground_truth_dag(g0, all_nodes, train_df; args)
+
+    #-- save
+    if !isempty(strip(args.save_path))
+        @info "Saving data and models to path" args.save_path args.pkl_path
+        pickle_save(args.pkl_path, (; ground_truth_dag, target_node, training_data, ordered_nodes, topo_path))
+        @≥ mlp, unet cpu.();
+        BSON.@save args.save_path args sub_nodes all_nodes target g0 v0 train_df mlp unet
+    end
+end
+
+@≥ mlp, unet gpu.();
+
+#-- eval mlp
+X = @> train_df Array;
+loader = DataLoader((X',); args.batchsize, shuffle=true)
+eval_mlp(mlp, loader)
+
 
 normal_samples = rand(bn0, min_depth*500)
 learned_dag = fit_dag!(pydeepcopy(ground_truth_dag), pytable(normal_samples))

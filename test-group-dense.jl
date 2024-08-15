@@ -19,7 +19,7 @@ include("lib/diffusion.jl")
 using CUDA, BenchmarkTools
 
 
-X, Y, F, batchsize = 10, 20, 30, 64;
+X, Y, F, batchsize = 10, 20, 30, 128;
 m = GroupDense(X, Y, F) |> gpu;
 x = randn(X, batchsize) |> gpu;
 

@@ -3,6 +3,7 @@ import networkx
 import numpy
 from scipy import stats
 from sklearn.linear_model import LinearRegression
+from sklearn.neural_network import MLPRegressor
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF
 from scipy.special import expit as sigmoid
@@ -129,19 +130,19 @@ def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes):
         causal_dag.graph.add_node(new_child)
 
         # Random mechanism
-        hidden = 10
-        n = 1000
-        z = np.random.normal(scale=0.1, size=n)
-        pa_size = len(parents)
-        X = np.random.randn(n, pa_size)
-        W1 = np.random.uniform(low=0.5, high=2.0, size=[pa_size, hidden])
-        W1[np.random.rand(*W1.shape) < 0.5] *= -1
-        W2 = np.random.uniform(low=0.5, high=2.0, size=hidden)
-        W2[np.random.rand(hidden) < 0.5] *= -1
-        y = sigmoid(X @ W1) @ W2 + z
-        gp = GaussianProcessRegressor().fit(X, y)
-        #
-        causal_mechanism = AdditiveNoiseModel(gp, ScipyDistribution(stats.norm, loc=0, scale=0.1))
+        # hidden = 10
+        # n = 1000
+        # z = np.random.normal(scale=0.1, size=n)
+        # pa_size = len(parents)
+        # X = np.random.randn(n, pa_size)
+        # W1 = np.random.uniform(low=0.5, high=2.0, size=[pa_size, hidden])
+        # W1[np.random.rand(*W1.shape) < 0.5] *= -1
+        # W2 = np.random.uniform(low=0.5, high=2.0, size=hidden)
+        # W2[np.random.rand(hidden) < 0.5] *= -1
+        # y = sigmoid(X @ W1) @ W2 + z
+        # gp = GaussianProcessRegressor().fit(X, y)
+        regressor = MLPRegressor((3, 2,), "tanh")
+        causal_mechanism = AdditiveNoiseModel(regressor, ScipyDistribution(stats.norm, loc=0.0, scale=1.0))
         causal_dag.set_causal_mechanism(new_child, causal_mechanism)
 
         for parent in parents:

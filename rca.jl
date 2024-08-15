@@ -14,48 +14,72 @@ using Flux
 using Flux: gpu, Chain, Dense, relu, DataLoader
 
 include("bayesnets-extra.jl")
-include("group-mlp-unet.jl")
-include("group-mlp-regression.jl")
+include("group-mlp.jl")
 include("lib/diffusion.jl")
 
 function df_(pydf)
     @> pydf PyPandasDataFrame DataFrame
 end
 
-function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; args)
-    d = length(all_nodes)
+function eval_mlp(mlp, loader)
+    @info "Evaluate mlp"
+    (x,) = @> loader first gpu
+    d = size(x, 1)
+    total_loss = 0.0
+    mlp_loss_mask = @> mlp.mask maximum(dims=1)
+    for (x,) = loader
+        @≥ x gpu;
+        xj = unsqueeze(x, 1);
+        batchsize = size(x)[end]
+        @≥ x unsqueeze(2) repeat(1, d, 1)
+        loss = sum(abs2, mlp_loss_mask .* (mlp(x) - xj)) / batchsize
+        total_loss += loss
+    end
+    @show total_loss/length(loader)
+end
+
+function create_score_model_from_ground_truth_dag(g0, all_nodes, train_df; args)
     B = adjacency_matrix(g0)
     # paj_mask = @> B Matrix{Bool} gpu
     paj_mask = @> B Matrix{Float32} gpu
-    unet = GroupMlpUnet(B) |> gpu
-    mlp = GroupMlpRegression(B) |> gpu
-    X = @> df_(training_data) Array;
-    opt = Flux.setup(Optimisers.AdamW(args.lr, (0.9, 0.999), args.decay), unet);
-    # AdamW(η = 0.001, β = (0.9, 0.999), λ = 0, ϵ = 1e-8)
-    loader = DataLoader((X',); args.batchsize, shuffle=true)
-    (x,) = loader |> first;
-    @≥ x gpu unsqueeze(2) repeat(1, d, 1)
+    @info "Creating unet and mlp models"
+    unet = GroupMlpUnet(B)
+    mlp = GroupMlpRegression(B)
+    @≥ mlp, unet gpu.()
 
-    conditional_score_matching_loss(mlp, unet, x, paj_mask)
+    mlp_loss_mask = @> mlp.mask maximum(dims=1)
+    X = @> train_df Array;
+    μ, σ = @> X mean(dims=1), std(dims=1)
+    # X = (X .- μ) ./ σ
+    loader = DataLoader((X',); args.batchsize, shuffle=true)
+    (x,) = @> loader first gpu
+    d = size(x, 1)
+    eval_mlp(mlp, loader)
 
     #-- Train mlp
-    progress = Progress(args.epochs, desc="Fitting unet")
+    opt = Flux.setup(Optimisers.AdamW(args.lr, (0.9, 0.999), args.decay), mlp);
+    progress = Progress(args.epochs, desc="Fitting mlp")
+
     for epoch = 1:args.epochs
         total_loss = 0.0
         for (x,) = loader
-            @≥ x gpu unsqueeze(2) repeat(1, d, 1)
-            loss, (grad,) = Flux.withgradient(unet, ) do unet
-                conditional_score_matching_loss(mlp, unet, x, paj_mask)
-            end
-            Flux.update!(opt, unet, grad)
+            batchsize = size(x)[end]
+            @≥ x gpu;
+            xj = unsqueeze(x, 1);
+            x = @> x unsqueeze(2) repeat(1, d, 1)
+            loss, (grad,) = Zygote.withgradient(mlp, ) do mlp
+                sum(abs2, mlp_loss_mask .* (mlp(x) - xj)) / batchsize
+            end;
+            Flux.update!(opt, mlp, grad);
             total_loss += loss
         end
         next!(progress; showvalues=[(:loss, total_loss/length(loader))])
     end
 
     #-- Train unet
+    opt = Flux.setup(Optimisers.AdamW(args.lr, (0.9, 0.999), args.decay), unet);
     progress = Progress(args.epochs, desc="Fitting unet")
-    for epoch = 1:args.epochs
+    for epoch = 1:args.epochs÷5
         total_loss = 0.0
         for (x,) = loader
             @≥ x gpu unsqueeze(2) repeat(1, d, 1)
@@ -68,13 +92,13 @@ function create_score_model_from_ground_truth_dag(g0, all_nodes, training_data; 
         next!(progress; showvalues=[(:loss, total_loss/length(loader))])
     end
 
-    return unet
+    return mlp, unet
 end
 
 """
 model_type=NonlinearScoreCPD
 """
-function create_model_from_ground_truth_dag(g0, all_nodes, training_data; args, model_type=NonlinearGaussianCPD)
+function create_model_from_ground_truth_dag(g0, all_nodes, train_df; args, model_type=NonlinearGaussianCPD)
     d = length(all_nodes)
     B = adjacency_matrix(g0)
     g = DiGraph(B)
@@ -82,12 +106,12 @@ function create_model_from_ground_truth_dag(g0, all_nodes, training_data; args, 
         ii = parent_indices(B, j)
         node = all_nodes[j]
         if length(ii) == 0
-            # fit(StaticCPD{Normal}, df_(training_data), node)
+            # fit(StaticCPD{Normal}, df_(train_df), node)
             cpd = StaticCPD(node, Normal(0, 1))
         else
             pa = all_nodes[ii]
-            # fit(LinearBayesianCPD, df_(training_data), node, pa)
-            cpd = fit(model_type, df_(training_data), node, pa; args)
+            # fit(LinearBayesianCPD, df_(train_df), node, pa)
+            cpd = fit(model_type, df_(train_df), node, pa; args)
             cpd
         end
     end
@@ -161,7 +185,7 @@ function create_model_from_sub_graph_with_w_noise_scale(g0, sub_nodes, all_nodes
     return bn
 end
 
-function fit_dag!(dag, training_data)
+function fit_dag!(dag, train_df)
     for node in dag.graph.nodes
         if is_root_node(dag.graph, node) |> pytruth
             dag.set_causal_mechanism(node, EmpiricalDistribution())
@@ -170,7 +194,7 @@ function fit_dag!(dag, training_data)
         end
     end
     # Fit causal mechanisms..
-    gcm.fit(dag, training_data)
+    gcm.fit(dag, train_df)
     return dag
 end
 
