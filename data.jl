@@ -42,3 +42,4 @@ function Base.getindex(bn::BayesNet, node::Symbol)
     bn.cpds[findfirst(==(node), names(bn))]
 end
 
+

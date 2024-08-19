@@ -12,6 +12,9 @@ using ProgressMeter: Progress, next!
 using CUDA
 using Flux
 using Flux: gpu, Chain, Dense, relu, DataLoader
+using ParameterSchedulers
+using ParameterSchedulers: Scheduler, Stateful, next!
+using Optimisers: Descent, adjust!
 
 include("bayesnets-extra.jl")
 include("group-mlp.jl")
@@ -21,47 +24,62 @@ function df_(pydf)
     @> pydf PyPandasDataFrame DataFrame
 end
 
-function eval_mlp(mlp, loader)
-    @info "Evaluate mlp"
-    (x,) = @> loader first gpu
+function eval_mlp(mlp, train_df)
+    x = @> train_df Array transpose Array gpu;
     d = size(x, 1)
-    total_loss = 0.0
-    mlp_loss_mask = @> mlp.mask maximum(dims=1)
-    for (x,) = loader
-        @≥ x gpu;
-        xj = unsqueeze(x, 1);
-        batchsize = size(x)[end]
-        @≥ x unsqueeze(2) repeat(1, d, 1)
-        loss = sum(abs2, mlp_loss_mask .* (mlp(x) - xj)) / batchsize
-        total_loss += loss
-    end
-    @show total_loss/length(loader)
+    mlp_loss_mask = @> mlp.paj_mask maximum(dims=1)
+    xj = unsqueeze(x, 1);
+    batchsize = size(x)[end]
+    @≥ x unsqueeze(2) repeat(1, d, 1)
+    loss = sum(abs2, mlp_loss_mask .* (mlp(x) - xj)) / batchsize
+    @info "Evaluate mlp" loss
 end
 
-function create_score_model_from_ground_truth_dag(g0, all_nodes, train_df; args)
-    B = adjacency_matrix(g0)
-    # paj_mask = @> B Matrix{Bool} gpu
-    paj_mask = @> B Matrix{Float32} gpu
-    @info "Creating unet and mlp models"
-    unet = GroupMlpUnet(B)
-    mlp = GroupMlpRegression(B)
-    @≥ mlp, unet gpu.()
+function eval_unet(mlp, unet, train_df)
+    x = @> train_df Array transpose Array gpu;
+    d = size(x, 1)
+    @≥ x gpu unsqueeze(2) repeat(1, d, 1)
+    kw = conditional_noise_grad_sampling(mlp, x)
+    loss = conditional_score_matching_loss(unet; kw...)
+    @info "Evaluate unet" loss
+end
 
-    mlp_loss_mask = @> mlp.mask maximum(dims=1)
+function get_fcms(ground_truth_dag)
+    g = ground_truth_dag
+    regressor = g.causal_mechanism(topo_path[1]).prediction_model
+    w1 = regressor.coefs_[0]
+    w2 = regressor.coefs_[1]
+    @≥ w1 PyArray
+    @≥ w2 PyArray
+    m = Chain(Dense(1, 100, Flux.σ, bias=false), Dense(100, 1, bias=false),)
+    m[1].weight .= w1'
+    m[2].weight .= w2'
+    [m]
+end
+
+function train_score_model_from_ground_truth_dag(mlp, unet, train_df; args)
+    @≥ mlp, unet gpu.()
+    paj_mask = mlp.paj_mask
+    mlp_loss_mask = @> mlp.paj_mask maximum(dims=1)
     X = @> train_df Array;
     μ, σ = @> X mean(dims=1), std(dims=1)
     # X = (X .- μ) ./ σ
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = @> loader first gpu
     d = size(x, 1)
-    eval_mlp(mlp, loader)
 
     #-- Train mlp
-    opt = Flux.setup(Optimisers.AdamW(args.lr, (0.9, 0.999), args.decay), mlp);
+    eval_mlp(mlp, train_df)
+    # opt = Flux.setup(Optimisers.AdamW(args.lr_mlp, (0.9, 0.999), args.decay), mlp);
+    # opt = Flux.setup(Optimisers.RMSProp(args.lr_mlp), mlp);
+    opt = Flux.setup(Optimisers.Adam(args.lr_mlp), mlp);
+    scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_mlp, decay = 0.5))
     progress = Progress(args.epochs, desc="Fitting mlp")
 
     for epoch = 1:args.epochs
         total_loss = 0.0
+        # learning rate 10 schedules
+        epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
         for (x,) = loader
             batchsize = size(x)[end]
             @≥ x gpu;
@@ -77,14 +95,21 @@ function create_score_model_from_ground_truth_dag(g0, all_nodes, train_df; args)
     end
 
     #-- Train unet
-    opt = Flux.setup(Optimisers.AdamW(args.lr, (0.9, 0.999), args.decay), unet);
-    progress = Progress(args.epochs, desc="Fitting unet")
+    eval_unet(mlp, unet, train_df)
+    # opt = Flux.setup(Optimisers.AdamW(args.lr_unet, (0.9, 0.999), args.decay), unet);
+    opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
+    scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_unet, decay = 0.5))
+    progress = Progress(args.epochs÷5, desc="Fitting unet")
     for epoch = 1:args.epochs÷5
         total_loss = 0.0
+        # learning rate 10 schedules
+        epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
         for (x,) = loader
             @≥ x gpu unsqueeze(2) repeat(1, d, 1)
             loss, (grad,) = Flux.withgradient(unet, ) do unet
-                conditional_score_matching_loss(mlp, unet, x, paj_mask)
+                # conditional_score_matching_loss(mlp, unet, x)
+                kw = conditional_noise_grad_sampling(mlp, x)
+                conditional_score_matching_loss(unet; kw...)
             end
             Flux.update!(opt, unet, grad)
             total_loss += loss

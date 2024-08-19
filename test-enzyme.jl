@@ -1,36 +1,26 @@
-using Enzyme, Flux
+using Enzyme, Flux, BenchmarkTools
 
-function train_enzyme!(fn, model, args...; kwargs...)
-    Flux.train!(fn, Duplicated(model, Enzyme.make_zero(model)), args...; kwargs...)
+function train_enzyme!(loss, model, dmodel, data, optim)
+    @which Flux.train!(loss, Duplicated(model, dmodel), data, optim)
 end
 
-data = [([x], 2x-x^3) for x in -2:0.1f0:2]
-model = Chain(Dense(1 => 23, tanh), Dense(23 => 1, bias=false), only)
+x = rand(Float32, 24, 200);
+y = Matrix{Float32}(undef, 2, 200) .= randn.() .* 10;
+
+model = Chain(Dense(24 => 8, tanh), Dense(8 => 5, relu), Dense(5 => 2), )
 optim = Flux.setup(Adam(), model)
+model(x)
+loss(model, x, y) = mean(abs2, model(x) - y)
+data = [(x, y)]
 
-fn(m, x, y) = (m(x) - y)^2
-
-@time for epoch in 1:1000
-    Flux.train!(fn, model, data, optim)
+# 700 +- 600 μs
+@btime for epoch in 1:10
+    Flux.train!(loss, model, data, optim)
 end
 
-@time for epoch in 1:1000
-    Flux.train!(fn, model, data, optim)
-end
-
-@time for epoch in 1:1000
-    Flux.train!(fn, model, data, optim)
-end
-
-@time for epoch in 1:1000
-    train_enzyme!(fn, model, data, optim)
-end
-
-@time for epoch in 1:1000
-    train_enzyme!(fn, model, data, optim)
-end
-
-@time for epoch in 1:1000
-    train_enzyme!(fn, model, data, optim)
+# 1.4 +- 900 μs
+dmodel = Enzyme.make_zero(model)
+@btime for epoch in 1:10
+    train_enzyme!(loss, model, dmodel, data, optim)
 end
 

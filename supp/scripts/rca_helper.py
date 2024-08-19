@@ -17,6 +17,7 @@ from dowhy.gcm.anomaly import anomaly_score_attributions
 from dowhy.gcm.graph import PARENTS_DURING_FIT, get_ordered_predecessors
 from dowhy.gcm.ml import SklearnRegressionModel
 from dowhy.gcm.util.general import column_stack_selected_numpy_arrays, convert_to_data_frame
+from dowhy.gcm.fcms import AdditiveNoiseModel
 from scipy.stats import norm
 import numpy as np
 from dowhy.gcm.shapley import ShapleyApproximationMethods
@@ -35,6 +36,7 @@ class ZOutlierScorePy:
 
 
 def random_linear_dag_generator(num_root_nodes, num_downstream_nodes):
+    print("random_linear_dag_generator\n")
     def sample_natural_number(init_mass) -> int:
         current_mass = init_mass
         probability = numpy.random.uniform(0, 1)
@@ -50,6 +52,7 @@ def random_linear_dag_generator(num_root_nodes, num_downstream_nodes):
                 current_mass += 1 / (k ** 2)
 
     causal_dag = InvertibleStructuralCausalModel(networkx.DiGraph())
+    dowhy.gcm.fcms.AdditiveNoiseModel
 
     all_nodes = []
 
@@ -90,8 +93,46 @@ def random_linear_dag_generator(num_root_nodes, num_downstream_nodes):
     return causal_dag
 
 
+def _simulate_single_equation(X, scale):
+    """X: [n, num of parents], x: [n]"""
+    z = np.random.normal(scale=scale, size=n)
+    pa_size = X.shape[1]
+    if pa_size == 0:
+        return z
+    if sem_type == 'mlp':
+        hidden = 100
+        W1 = np.random.uniform(low=0.5, high=2.0, size=[pa_size, hidden])
+        W1[np.random.rand(*W1.shape) < 0.5] *= -1
+        W2 = np.random.uniform(low=0.5, high=2.0, size=hidden)
+        W2[np.random.rand(hidden) < 0.5] *= -1
+        x = sigmoid(X @ W1) @ W2 + z
+    elif sem_type == 'mim':
+        w1 = np.random.uniform(low=0.5, high=2.0, size=pa_size)
+        w1[np.random.rand(pa_size) < 0.5] *= -1
+        w2 = np.random.uniform(low=0.5, high=2.0, size=pa_size)
+        w2[np.random.rand(pa_size) < 0.5] *= -1
+        w3 = np.random.uniform(low=0.5, high=2.0, size=pa_size)
+        w3[np.random.rand(pa_size) < 0.5] *= -1
+        x = np.tanh(X @ w1) + np.cos(X @ w2) + np.sin(X @ w3) + z
+    elif sem_type == 'gp':
+        from sklearn.gaussian_process import GaussianProcessRegressor
+        gp = GaussianProcessRegressor()
+        x = gp.sample_y(X, random_state=None).flatten() + z
+    elif sem_type == 'gp-add':
+        from sklearn.gaussian_process import GaussianProcessRegressor
+        gp = GaussianProcessRegressor()
+        x = sum([gp.sample_y(X[:, i, None], random_state=None).flatten()
+                for i in range(X.shape[1])]) + z
+    else:
+        raise ValueError('Unknown sem type. In a nonlinear model, \
+                         the options are as follows: mlp, mim, \
+                         gp, gp-add, or quadratic.')
+    return x
 
-def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes):
+def sigmoid(z):
+    return 1/(1 + np.exp(-z))
+
+def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes, scale):
     print("random_nonlinear_dag_generator\n")
     def sample_natural_number(init_mass) -> int:
         current_mass = init_mass
@@ -130,19 +171,25 @@ def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes):
         causal_dag.graph.add_node(new_child)
 
         # Random mechanism
-        # hidden = 10
-        # n = 1000
-        # z = np.random.normal(scale=0.1, size=n)
-        # pa_size = len(parents)
-        # X = np.random.randn(n, pa_size)
-        # W1 = np.random.uniform(low=0.5, high=2.0, size=[pa_size, hidden])
-        # W1[np.random.rand(*W1.shape) < 0.5] *= -1
-        # W2 = np.random.uniform(low=0.5, high=2.0, size=hidden)
-        # W2[np.random.rand(hidden) < 0.5] *= -1
-        # y = sigmoid(X @ W1) @ W2 + z
-        # gp = GaussianProcessRegressor().fit(X, y)
-        regressor = MLPRegressor((3, 2,), "tanh")
-        causal_mechanism = AdditiveNoiseModel(regressor, ScipyDistribution(stats.norm, loc=0.0, scale=1.0))
+        hidden = 100
+        n = 100
+        z = np.random.normal(scale=0.1, size=n)
+        pa_size = len(parents)
+        X = np.random.randn(n, pa_size)
+        W1 = np.random.uniform(low=0.5, high=2.0, size=[pa_size, hidden])
+        W1[np.random.rand(*W1.shape) < 0.5] *= -1
+        W2 = np.random.uniform(low=0.5, high=2.0, size=hidden)
+        W2[np.random.rand(hidden) < 0.5] *= -1
+        y = sigmoid(X @ W1) @ W2 + z
+        regressor = GaussianProcessRegressor()
+        regressor = MLPRegressor((100, ), "logistic")
+        regressor.fit(X,y)  # to create coefs_ variable
+        regressor.coefs_[0] = W1
+        regressor.coefs_[1] = W2.reshape(regressor.coefs_[1].shape)
+        regressor.intercepts_[0] = np.zeros_like(regressor.intercepts_[0])
+        regressor.intercepts_[1] = np.zeros_like(regressor.intercepts_[1])
+        # regressor.partial_fit(X, y)
+        causal_mechanism = AdditiveNoiseModel(regressor, ScipyDistribution(stats.norm, loc=0.0, scale=scale))
         causal_dag.set_causal_mechanism(new_child, causal_mechanism)
 
         for parent in parents:

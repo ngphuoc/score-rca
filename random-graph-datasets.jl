@@ -11,14 +11,14 @@ include("rca.jl")
 include("bayesnets-extra.jl")
 @py import pandas as pd
 
-function get_ground_truth_dag(min_depth, n_nodes)
+function get_ground_truth_dag(min_depth, n_nodes, scale=0.1)
     is_sufficiently_deep_graph = false
     ground_truth_dag = target_node = nothing
     while !is_sufficiently_deep_graph
         n_downstream_nodes = n_nodes - n_root_nodes
         # Generate DAG with random number of nodes and root nodes
-        ground_truth_dag = random_linear_dag_generator(n_root_nodes, n_downstream_nodes)
-        # ground_truth_dag = random_nonlinear_dag_generator(n_root_nodes, n_downstream_nodes)
+        # ground_truth_dag = random_linear_dag_generator(n_root_nodes, n_downstream_nodes)
+        ground_truth_dag = random_nonlinear_dag_generator(n_root_nodes, n_downstream_nodes, scale)
         # Make sure that the randomly generated DAG is deep enough.
         for node = sample(collect(ground_truth_dag.graph.nodes), length(collect(ground_truth_dag.graph.nodes)), replace=false)
             target_node = node

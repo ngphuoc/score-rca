@@ -15,9 +15,9 @@ pyimport("sys").path
 @py import pybaseball as pyb
 @py import scipy
 @py import dowhy
+@py import sklearn
 @unpack stats = scipy
-
-@unpack ndcg_score, classification_report, roc_auc_score = pyimport("sklearn.metrics")
+@unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 tqdm = pyimport("tqdm").tqdm
 pydeepcopy = pyimport("copy").deepcopy
 
