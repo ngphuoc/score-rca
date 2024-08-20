@@ -60,12 +60,15 @@ end
     g0, v0 = from_pydigraph(ground_truth_dag, ordered_nodes)
     i0(node) = i2(node, v0)
     train_df = df_(training_data)
+    X = @> train_df Array transpose Array;
+    μX, σX = @> X mean(dims=2), std(dims=2);
+    X = @. (X - μX) / σX  # normalise
 
     #-- train models
     hidden_dims = [2, ]
-    B = adjacency_matrix(g0)
+    paj_mask = B = @> adjacency_matrix(g0) Matrix{Bool}
     @info "Creating unet and mlp models"
-    mlp = GroupMlpRegression(B; hidden_dims)
+    mlp = GroupMlpRegression(B; μX, σX, hidden_dims, activation=Flux.tanh)
     # no fcm for node 1
     mlp.mlp[1].weight[:, :, 1] .= 0
     mlp.mlp[2].weight[:, :, 1] .= 0

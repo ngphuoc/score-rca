@@ -19,9 +19,11 @@ include("lib/nnlib.jl")
 
 #-- MLP Regression
 
-struct GroupMlpRegression{T}
+struct GroupMlpRegression{M,T}
+    μX::AbstractVector{T}  # for normalisation of observations
+    σX::AbstractVector{T}
     paj_mask::AbstractMatrix{Bool}
-    mlp::T
+    mlp::M
 end
 
 @functor GroupMlpRegression
@@ -29,15 +31,16 @@ Optimisers.trainable(mlp::GroupMlpRegression) = (; mlp.mlp)  # no trainable para
 
 @showfields GroupMlpRegression
 
-function GroupMlpRegression(adjmat::AbstractMatrix{T}; hidden_dims=[100, ], activation=Flux.σ) where {T}
-    paj_mask = @> adjmat Matrix{Bool}
-    F = X = input_dim = size(adjmat, 1)
+function GroupMlpRegression(paj_mask::Matrix{Bool}; X, μX=mean(X, dims=2), σX=std(X, dims=2), hidden_dims=[100, ], activation=Flux.σ)
+    F = I = input_dim = size(paj_mask, 1)
     H = hidden_dims
-    return GroupMlpRegression(paj_mask, Chain(
-                                          GroupDense(X, H[1], F),
-                                          [GroupDense(H[i], H[i+1], F, activation) for i=1:length(H)-1]...,
-                                          GroupDense(H[end], 1, F),
-                                         ))
+    return GroupMlpRegression(μX, σX,
+                              paj_mask,
+                              Chain(
+                                    GroupDense(I, H[1], F),
+                                    [GroupDense(H[i], H[i+1], F, activation) for i=1:length(H)-1]...,
+                                    GroupDense(H[end], 1, F),
+                                   ))
 end
 
 function (mlp::GroupMlpRegression)(x::AbstractArray{T, 3}) where T
@@ -61,11 +64,10 @@ function scalar_zero(::AbstractArray{T,N}) where {T,N}
     0f0
 end
 
-function GroupMlpUnet(adjmat::AbstractMatrix{T}, scale=30.0f0; hidden_dims=[7, 5], activation=relu) where {T}
-    X = input_dim = size(adjmat, 1)
+function GroupMlpUnet(paj_mask::Matrix{Bool}, scale=30.0f0; hidden_dims=[7, 5], activation=relu)
+    X = input_dim = size(paj_mask, 1)
     E = F = X  # the first node j has only marginal prob, mask for conditional is zeros
     A, B, C, D, E = 2X, X, X÷2+1, X÷4+1, X
-    paj_mask = adjmat
     j_mask = I(F)
     @≥ j_mask, paj_mask Matrix{Bool}.()
     mask = max.(j_mask, paj_mask)
