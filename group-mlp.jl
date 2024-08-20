@@ -29,12 +29,12 @@ Optimisers.trainable(mlp::GroupMlpRegression) = (; mlp.mlp)  # no trainable para
 
 @showfields GroupMlpRegression
 
-function GroupMlpRegression(adjmat::AbstractMatrix{T}; hidden_dims=[100, 100, 20], activation=relu) where {T}
+function GroupMlpRegression(adjmat::AbstractMatrix{T}; hidden_dims=[100, ], activation=Flux.σ) where {T}
     paj_mask = @> adjmat Matrix{Bool}
     F = X = input_dim = size(adjmat, 1)
     H = hidden_dims
     return GroupMlpRegression(paj_mask, Chain(
-                                          GroupDense(X, H[1], F),  InstanceNorm(F, activation),
+                                          GroupDense(X, H[1], F),
                                           [GroupDense(H[i], H[i+1], F, activation) for i=1:length(H)-1]...,
                                           GroupDense(H[end], 1, F),
                                          ))

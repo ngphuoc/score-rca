@@ -11,14 +11,14 @@ include("rca.jl")
 include("bayesnets-extra.jl")
 @py import pandas as pd
 
-function get_ground_truth_dag(min_depth, n_nodes, scale=0.1)
+function get_ground_truth_dag(min_depth, n_nodes; scale=0.1, hidden=2)
     is_sufficiently_deep_graph = false
     ground_truth_dag = target_node = nothing
     while !is_sufficiently_deep_graph
         n_downstream_nodes = n_nodes - n_root_nodes
         # Generate DAG with random number of nodes and root nodes
         # ground_truth_dag = random_linear_dag_generator(n_root_nodes, n_downstream_nodes)
-        ground_truth_dag = random_nonlinear_dag_generator(n_root_nodes, n_downstream_nodes, scale)
+        ground_truth_dag = random_nonlinear_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden)
         # Make sure that the randomly generated DAG is deep enough.
         for node = sample(collect(ground_truth_dag.graph.nodes), length(collect(ground_truth_dag.graph.nodes)), replace=false)
             target_node = node
@@ -145,8 +145,8 @@ end
 # contributions = causal_rca_contributions
 # c = contributions[1]
 
-function get_data(min_depth, n_nodes)
-    ground_truth_dag, target_node = get_ground_truth_dag(min_depth, n_nodes)
+function get_data(min_depth, n_nodes; scale, hidden)
+    ground_truth_dag, target_node = get_ground_truth_dag(min_depth, n_nodes; scale, hidden)
     training_data = draw_samples(ground_truth_dag, n_samples)
     ordered_nodes = collect(networkx.topological_sort(ground_truth_dag.graph))
     pred_method, topo_path = gcm._noise.get_noise_dependent_function(ground_truth_dag, target_node)

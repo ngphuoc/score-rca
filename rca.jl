@@ -31,7 +31,9 @@ function eval_mlp(mlp, train_df)
     xj = unsqueeze(x, 1);
     batchsize = size(x)[end]
     @≥ x unsqueeze(2) repeat(1, d, 1)
-    loss = sum(abs2, mlp_loss_mask .* (mlp(x) - xj)) / batchsize
+    loss = sum(abs2, mlp_loss_mask .* (mlp.mlp(x) - xj)) / batchsize
+    @> mlp.mlp(x) maximum, minimum, mean, std
+    @> xj maximum, minimum, mean, std
     @info "Evaluate mlp" loss
 end
 
@@ -51,7 +53,8 @@ function get_fcms(ground_truth_dag)
     w2 = regressor.coefs_[1]
     @≥ w1 PyArray
     @≥ w2 PyArray
-    m = Chain(Dense(1, 100, Flux.σ, bias=false), Dense(100, 1, bias=false),)
+    H = length(w1)
+    m = Chain(Dense(1, H, tanh, bias=false), Dense(H, 1, bias=false),)
     m[1].weight .= w1'
     m[2].weight .= w2'
     [m]
@@ -62,37 +65,13 @@ function train_score_model_from_ground_truth_dag(mlp, unet, train_df; args)
     paj_mask = mlp.paj_mask
     mlp_loss_mask = @> mlp.paj_mask maximum(dims=1)
     X = @> train_df Array;
-    μ, σ = @> X mean(dims=1), std(dims=1)
+    # μ, σ = @> X mean(dims=1), std(dims=1)
     # X = (X .- μ) ./ σ
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = @> loader first gpu
     d = size(x, 1)
 
-    #-- Train mlp
     eval_mlp(mlp, train_df)
-    # opt = Flux.setup(Optimisers.AdamW(args.lr_mlp, (0.9, 0.999), args.decay), mlp);
-    # opt = Flux.setup(Optimisers.RMSProp(args.lr_mlp), mlp);
-    opt = Flux.setup(Optimisers.Adam(args.lr_mlp), mlp);
-    scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_mlp, decay = 0.5))
-    progress = Progress(args.epochs, desc="Fitting mlp")
-
-    for epoch = 1:args.epochs
-        total_loss = 0.0
-        # learning rate 10 schedules
-        epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
-        for (x,) = loader
-            batchsize = size(x)[end]
-            @≥ x gpu;
-            xj = unsqueeze(x, 1);
-            x = @> x unsqueeze(2) repeat(1, d, 1)
-            loss, (grad,) = Zygote.withgradient(mlp, ) do mlp
-                sum(abs2, mlp_loss_mask .* (mlp(x) - xj)) / batchsize
-            end;
-            Flux.update!(opt, mlp, grad);
-            total_loss += loss
-        end
-        next!(progress; showvalues=[(:loss, total_loss/length(loader))])
-    end
 
     #-- Train unet
     eval_unet(mlp, unet, train_df)

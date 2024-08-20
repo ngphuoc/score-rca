@@ -132,7 +132,7 @@ def _simulate_single_equation(X, scale):
 def sigmoid(z):
     return 1/(1 + np.exp(-z))
 
-def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes, scale):
+def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes, scale, hidden):
     print("random_nonlinear_dag_generator\n")
     def sample_natural_number(init_mass) -> int:
         current_mass = init_mass
@@ -171,7 +171,6 @@ def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes, scale):
         causal_dag.graph.add_node(new_child)
 
         # Random mechanism
-        hidden = 100
         n = 100
         z = np.random.normal(scale=0.1, size=n)
         pa_size = len(parents)
@@ -181,8 +180,8 @@ def random_nonlinear_dag_generator(num_root_nodes, num_downstream_nodes, scale):
         W2 = np.random.uniform(low=0.5, high=2.0, size=hidden)
         W2[np.random.rand(hidden) < 0.5] *= -1
         y = sigmoid(X @ W1) @ W2 + z
-        regressor = GaussianProcessRegressor()
-        regressor = MLPRegressor((100, ), "logistic")
+        # regressor = GaussianProcessRegressor()
+        regressor = MLPRegressor((hidden, ), "tanh")
         regressor.fit(X,y)  # to create coefs_ variable
         regressor.coefs_[0] = W1
         regressor.coefs_[1] = W2.reshape(regressor.coefs_[1].shape)
