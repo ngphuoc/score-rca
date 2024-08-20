@@ -15,12 +15,12 @@ args = @env begin
     scale=30.0f0  # RandomFourierFeatures scale
     σ_max = 5.0
     σ_min = 1e-3
-    lr_mlp = 1e-1  # learning rate
-    lr_unet = 1e-1  # learning rate
+    lr_mlp = 1e-3  # learning rate
+    lr_unet = 1e-3  # learning rate
     decay = 1e-5  # weight decay parameter for AdamW
     to_device = Flux.gpu
     batchsize = 32
-    epochs = 300
+    epochs = 500
     save_path = "data/exp2d.bson"
     load_path = ""
     pkl_path = "data/exp2d.pkl"
@@ -62,28 +62,27 @@ end
     train_df = df_(training_data)
     X = @> train_df Array transpose Array;
     μX, σX = @> X mean(dims=2), std(dims=2);
-    X = @. (X - μX) / σX  # normalise
 
     #-- train models
     hidden_dims = [2, ]
     paj_mask = B = @> adjacency_matrix(g0) Matrix{Bool}
     @info "Creating unet and mlp models"
-    mlp = GroupMlpRegression(B; μX, σX, hidden_dims, activation=Flux.tanh)
-    # no fcm for node 1
-    mlp.mlp[1].weight[:, :, 1] .= 0
-    mlp.mlp[2].weight[:, :, 1] .= 0
-    # fcm for node 2
-    # with input node 1
-    mlp.mlp[1].weight[:, 1, 2] .= fcm[1].weight
-    mlp.mlp[1].weight[:, 2, 2] .= 0
-    mlp.mlp[1].bias .= 0
-    # fcm layer 2
-    mlp.mlp[2].weight[:, :, 2] .= fcm[2].weight
-    mlp.mlp[2].bias .= 0
-    # mlp = GroupMlpRegression(Matrix{Bool}(B), fcm)
+    regressor = GroupMlpRegression(B; μX, σX, hidden_dims, activation=Flux.tanh)
     unet = GroupMlpUnet(B)
+    # # no fcm for node 1
+    # regressor.mlp[1].weight[:, :, 1] .= 0
+    # regressor.mlp[2].weight[:, :, 1] .= 0
+    # # fcm for node 2
+    # # with input node 1
+    # regressor.mlp[1].weight[:, 1, 2] .= fcm[1].weight
+    # regressor.mlp[1].weight[:, 2, 2] .= 0
+    # regressor.mlp[1].bias .= 0
+    # # fcm layer 2
+    # regressor.mlp[2].weight[:, :, 2] .= fcm[2].weight
+    # regressor.mlp[2].bias .= 0
+    # mlp = GroupMlpRegression(Matrix{Bool}(B), fcm)
 
-    mlp, unet = train_score_model_from_ground_truth_dag(mlp, unet, train_df; args)
+    regressor, unet = train_score_model_from_ground_truth_dag(regressor, unet, train_df; args)
 
     ##-- save
     #if !isempty(strip(args.save_path))
@@ -94,73 +93,73 @@ end
     #end
 #end
 
-using Distributions, Statistics, StatsPlots, Plots, LaTeXStrings, Plots.PlotMeasures, ColorSchemes
-gr()
+#using Distributions, Statistics, StatsPlots, Plots, LaTeXStrings, Plots.PlotMeasures, ColorSchemes
+#gr()
 
-function arrow0!(x, y, u, v; as=0.07, lw=1, lc=:black, la=1)
-    nuv = sqrt(u^2 + v^2)
-    v1, v2 = [u;v] / nuv,  [-v;u] / nuv
-    v4 = (3*v1 + v2)/3.1623  # sqrt(10) to get unit vector
-    v5 = v4 - 2*(v4'*v2)*v2
-    v4, v5 = as*nuv*v4, as*nuv*v5
-    plot!([x,x+u], [y,y+v], lw=lw, lc=lc, la=la)
-    plot!([x+u,x+u-v5[1]], [y+v,y+v-v5[2]], lw=lw, lc=lc, la=la)
-    plot!([x+u,x+u-v4[1]], [y+v,y+v-v4[2]], lw=lw, lc=lc, la=la)
-end
+#function arrow0!(x, y, u, v; as=0.07, lw=1, lc=:black, la=1)
+#    nuv = sqrt(u^2 + v^2)
+#    v1, v2 = [u;v] / nuv,  [-v;u] / nuv
+#    v4 = (3*v1 + v2)/3.1623  # sqrt(10) to get unit vector
+#    v5 = v4 - 2*(v4'*v2)*v2
+#    v4, v5 = as*nuv*v4, as*nuv*v5
+#    plot!([x,x+u], [y,y+v], lw=lw, lc=lc, la=la)
+#    plot!([x+u,x+u-v5[1]], [y+v,y+v-v5[2]], lw=lw, lc=lc, la=la)
+#    plot!([x+u,x+u-v4[1]], [y+v,y+v-v4[2]], lw=lw, lc=lc, la=la)
+#end
 
-function plot_data_gradients(train_df, mlp, unet; xlims, ylims)
-    @≥ mlp, unet gpu.();
+#function plot_data_gradients(train_df, mlp, unet; xlims, ylims)
+#    @≥ mlp, unet gpu.();
 
-    #-- defaults
-    default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlims, ylims, color=:seaborn_deep, markersize=2, leg=nothing)
+#    #-- defaults
+#    default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlims, ylims, color=:seaborn_deep, markersize=2, leg=nothing)
 
-    #-- plot data
-    x, y = eachcol(train_df)
-    pl_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Data $(x, y)$")
+#    #-- plot data
+#    x, y = eachcol(train_df)
+#    pl_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Data $(x, y)$")
 
-    #-- plot r2
-    x = @> train_df Array transpose Array gpu;
-    d = size(x, 1)
-    total_loss = 0.0
-    xj = unsqueeze(x, 1);
-    @≥ x unsqueeze(2) repeat(1, d, 1)
-    x̂ = mlp(x)
-    y, ŷ = @> xj, x̂ getindex.(1,2,:) cpu.() vec.();
-    pl_r2 =  scatter(y, ŷ; xlab=L"y", ylab=L"\hat{y}", title=L"Regression $R^2=%$(round(float(r2_score(y, ŷ)), digits=2))$")
+#    #-- plot r2
+#    x = @> train_df Array transpose Array gpu;
+#    d = size(x, 1)
+#    total_loss = 0.0
+#    xj = unsqueeze(x, 1);
+#    @≥ x unsqueeze(2) repeat(1, d, 1)
+#    x̂ = mlp(x)
+#    y, ŷ = @> xj, x̂ getindex.(1,2,:) cpu.() vec.();
+#    pl_r2 =  scatter(y, ŷ; xlab=L"y", ylab=L"\hat{y}", title=L"Regression $R^2=%$(round(float(r2_score(y, ŷ)), digits=2))$")
 
-    #-- plot perturbations
-    x = @> train_df Array transpose Array gpu;
-    d = size(x, 1)
-    X, batchsize = size(x, 1), size(x)[end]
-    j_mask = @> I(X) Matrix{Float32} gpu;
-    xj = x[[2], :]
-    t = rand!(similar(xj)) .* (1f0 - 1f-5) .+ 1f-5
-    σ_t = marginal_prob_std(t)
-    z = 2rand!(similar(x)) .- 1;
-    x̃ = x .+ σ_t .* z
-    x, y = eachrow(cpu(x̃))
-    pl_perturbed_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Perturbed data $(x, y)$")
+#    #-- plot perturbations
+#    x = @> train_df Array transpose Array gpu;
+#    d = size(x, 1)
+#    X, batchsize = size(x, 1), size(x)[end]
+#    j_mask = @> I(X) Matrix{Float32} gpu;
+#    xj = x[[2], :]
+#    t = rand!(similar(xj)) .* (1f0 - 1f-5) .+ 1f-5
+#    σ_t = marginal_prob_std(t)
+#    z = 2rand!(similar(x)) .- 1;
+#    x̃ = x .+ σ_t .* z
+#    x, y = eachrow(cpu(x̃))
+#    pl_perturbed_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Perturbed data $(x, y)$")
 
-    #-- plot gradients
-    x = @> Iterators.product(range(xlims..., length=30), range(ylims..., length=30)) collect vec;
-    x = @> reinterpret(reshape, Float64, x) Array{Float32} gpu;
-    d = size(x, 1)
-    xj = unsqueeze(x, 1);
-    @≥ x unsqueeze(2) repeat(1, d, 1)
-    t = fill!(similar(xj), 0.1)
-    σ_t = marginal_prob_std(t)
-    J = @> unet(x, t)[:, 2, :]
-    x = @> squeeze(xj, 1)
-    @≥ J, x cpu.()
-    x, y = eachrow(x);
-    u, v = eachrow(0.05J);
-    _, _, _, s = @> norm2(J, dims=1) maximum, minimum, mean, std
+#    #-- plot gradients
+#    x = @> Iterators.product(range(xlims..., length=30), range(ylims..., length=30)) collect vec;
+#    x = @> reinterpret(reshape, Float64, x) Array{Float32} gpu;
+#    d = size(x, 1)
+#    xj = unsqueeze(x, 1);
+#    @≥ x unsqueeze(2) repeat(1, d, 1)
+#    t = fill!(similar(xj), 0.1)
+#    σ_t = marginal_prob_std(t)
+#    J = @> unet(x, t)[:, 2, :]
+#    x = @> squeeze(xj, 1)
+#    @≥ J, x cpu.()
+#    x, y = eachrow(x);
+#    u, v = eachrow(0.05J);
+#    _, _, _, s = @> norm2(J, dims=1) maximum, minimum, mean, std
 
-    pl_gradient = scatter(x, y, markersize=0, lw=0, color=:white);
-    arrow0!.(x, y, u, v; as=0.3, lw=1.0);
-    @> Plots.plot(pl_data, pl_perturbed_data, pl_r2, pl_gradient; xlims, ylims, size=(1000, 800)) savefig("fig/$datetime_prefix-2d.png")
-end
+#    pl_gradient = scatter(x, y, markersize=0, lw=0, color=:white);
+#    arrow0!.(x, y, u, v; as=0.3, lw=1.0);
+#    @> Plots.plot(pl_data, pl_perturbed_data, pl_r2, pl_gradient; xlims, ylims, size=(1000, 800)) savefig("fig/$datetime_prefix-2d.png")
+#end
 
-xlims = ylims = (-15, 15)
-plot_data_gradients(train_df, mlp, unet; xlims, ylims)
+#xlims = ylims = (-15, 15)
+#plot_data_gradients(train_df, mlp, unet; xlims, ylims)
 

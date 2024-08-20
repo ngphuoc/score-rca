@@ -24,24 +24,24 @@ function df_(pydf)
     @> pydf PyPandasDataFrame DataFrame
 end
 
-function eval_mlp(mlp, train_df)
+function eval_regressor(regressor, train_df)
     x = @> train_df Array transpose Array gpu;
     d = size(x, 1)
-    mlp_loss_mask = @> mlp.paj_mask maximum(dims=1)
+    regressor_loss_mask = @> regressor.paj_mask maximum(dims=1)
     xj = unsqueeze(x, 1);
     batchsize = size(x)[end]
     @≥ x unsqueeze(2) repeat(1, d, 1)
-    loss = sum(abs2, mlp_loss_mask .* (mlp.mlp(x) - xj)) / batchsize
-    @> mlp.mlp(x) maximum, minimum, mean, std
+    loss = sum(abs2, regressor_loss_mask .* (regressor(x) - xj)) / batchsize
+    @> regressor(x) maximum, minimum, mean, std
     @> xj maximum, minimum, mean, std
-    @info "Evaluate mlp" loss
+    @info "Evaluate regressor" loss
 end
 
-function eval_unet(mlp, unet, train_df)
+function eval_unet(regressor, unet, train_df)
     x = @> train_df Array transpose Array gpu;
     d = size(x, 1)
     @≥ x gpu unsqueeze(2) repeat(1, d, 1)
-    kw = conditional_noise_grad_sampling(mlp, x)
+    kw = conditional_noise_grad_sampling(regressor, x)
     loss = conditional_score_matching_loss(unet; kw...)
     @info "Evaluate unet" loss
 end
@@ -60,22 +60,40 @@ function get_fcms(ground_truth_dag)
     [m]
 end
 
-function train_score_model_from_ground_truth_dag(mlp, unet, train_df; args)
-    @≥ mlp, unet gpu.()
-    paj_mask = mlp.paj_mask
-    mlp_loss_mask = @> mlp.paj_mask maximum(dims=1)
+function train_score_model_from_ground_truth_dag(regressor, unet, train_df; args)
+    @≥ regressor, unet gpu.()
+    paj_mask = regressor.paj_mask
+    regressor_loss_mask = @> regressor.paj_mask maximum(dims=1)
     X = @> train_df Array;
-    # μ, σ = @> X mean(dims=1), std(dims=1)
-    # X = (X .- μ) ./ σ
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = @> loader first gpu
     d = size(x, 1)
 
-    eval_mlp(mlp, train_df)
+    @info "Train regressor, weighted loss by variance"
+    eval_regressor(regressor, train_df)
+    opt = Flux.setup(Optimisers.Adam(args.lr_regressor), regressor);
+    # scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_regressor, decay = 0.5))
+    progress = Progress(args.epochs, desc="Fitting regressor")
 
-    #-- Train unet
-    eval_unet(mlp, unet, train_df)
-    # opt = Flux.setup(Optimisers.AdamW(args.lr_unet, (0.9, 0.999), args.decay), unet);
+    for epoch = 1:args.epochs
+        total_loss = 0.0
+        # epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
+        for (x,) = loader
+            batchsize = size(x)[end]
+            @≥ x gpu;
+            xj = unsqueeze(x, 1);
+            x = @> x unsqueeze(2) repeat(1, d, 1)
+            loss, (grad,) = Zygote.withgradient(regressor, ) do regressor
+                sum(abs2, regressor_loss_mask .* (regressor(x) - xj) ./ regressor.σX) / batchsize
+            end;
+            Flux.update!(opt, regressor, grad);
+            total_loss += loss
+        end
+        next!(progress; showvalues=[(:loss, total_loss/length(loader))])
+    end
+
+    @info "Train unet"
+    eval_unet(regressor, unet, train_df)
     opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
     scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_unet, decay = 0.5))
     progress = Progress(args.epochs÷5, desc="Fitting unet")
@@ -86,8 +104,8 @@ function train_score_model_from_ground_truth_dag(mlp, unet, train_df; args)
         for (x,) = loader
             @≥ x gpu unsqueeze(2) repeat(1, d, 1)
             loss, (grad,) = Flux.withgradient(unet, ) do unet
-                # conditional_score_matching_loss(mlp, unet, x)
-                kw = conditional_noise_grad_sampling(mlp, x)
+                # conditional_score_matching_loss(regressor, unet, x)
+                kw = conditional_noise_grad_sampling(regressor, x)
                 conditional_score_matching_loss(unet; kw...)
             end
             Flux.update!(opt, unet, grad)
@@ -96,7 +114,7 @@ function train_score_model_from_ground_truth_dag(mlp, unet, train_df; args)
         next!(progress; showvalues=[(:loss, total_loss/length(loader))])
     end
 
-    return mlp, unet
+    return regressor, unet
 end
 
 """

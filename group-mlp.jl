@@ -20,8 +20,8 @@ include("lib/nnlib.jl")
 #-- MLP Regression
 
 struct GroupMlpRegression{M,T}
-    μx::AbstractVector{T}  # for normalisation of observations
-    σx::AbstractVector{T}
+    μX::AbstractArray{T}  # for normalisation of observations
+    σX::AbstractArray{T}
     paj_mask::AbstractMatrix{Bool}
     mlp::M
 end
@@ -31,10 +31,10 @@ Optimisers.trainable(mlp::GroupMlpRegression) = (; mlp.mlp)  # no trainable para
 
 @showfields GroupMlpRegression
 
-function GroupMlpRegression(paj_mask::Matrix{Bool}; x, μx=mean(x, dims=2)', σx=std(x, dims=2)', hidden_dims=[100, ], activation=Flux.σ)
+function GroupMlpRegression(paj_mask::Matrix{Bool}; μX=mean(X, dims=2)', σX=std(X, dims=2)', hidden_dims=[100, ], activation=Flux.σ)
     F = I = input_dim = size(paj_mask, 1)
     H = hidden_dims
-    return GroupMlpRegression(μx, σx,
+    return GroupMlpRegression(μX, σX,
                               paj_mask,
                               Chain(
                                     GroupDense(I, H[1], F),
@@ -45,9 +45,9 @@ end
 
 function (mlp::GroupMlpRegression)(x::AbstractArray{T, 3}) where T
     paj_mask = mlp.paj_mask
-    x0 = @. (x - μx) / σx * paj_mask
+    x0 = @. (x - μX) / σX * paj_mask
     x̂ = mlp.mlp(x0)
-    x̂ * σx + μx
+    x̂ * σX + μX
 end
 
 #-- MLP UNet
@@ -66,10 +66,10 @@ function scalar_zero(::AbstractArray{T,N}) where {T,N}
 end
 
 function GroupMlpUnet(paj_mask::Matrix{Bool}, scale=30.0f0; hidden_dims=[7, 5], activation=relu)
-    X = input_dim = size(paj_mask, 1)
-    E = F = X  # the first node j has only marginal prob, mask for conditional is zeros
-    A, B, C, D, E = 2X, X, X÷2+1, X÷4+1, X
-    j_mask = I(F)
+    I = input_dim = size(paj_mask, 1)
+    E = F = I  # the first node j has only marginal prob, mask for conditional is zeros
+    A, B, C, D, E = 2I, I, I÷2+1, I÷4+1, I
+    j_mask = LinearAlgebra.I(F)
     @≥ j_mask, paj_mask Matrix{Bool}.()
     mask = max.(j_mask, paj_mask)
     return GroupMlpUnet(mask, (
@@ -79,14 +79,14 @@ function GroupMlpUnet(paj_mask::Matrix{Bool}, scale=30.0f0; hidden_dims=[7, 5], 
                                              Reshape(2E, F, :),
                                              GroupDense(2E, E, F, swish),
                                             ),
-                               e1 = GroupDense(X, A, F),
+                               e1 = GroupDense(I, A, F),
                                e2 = GroupDense(A, B, F),
                                e3 = GroupDense(B, C, F),
                                e4 = GroupDense(C, D, F),
                                d4 = GroupDense(D, C, F),
                                d3 = GroupDense(2C, B, F),
                                d2 = GroupDense(2B, A, F),
-                               d1 = GroupDense(2A, X, F),
+                               d1 = GroupDense(2A, I, F),
                                c1 = GroupDense(E, A, F),
                                c2 = GroupDense(E, B, F),
                                c3 = GroupDense(E, C, F),
