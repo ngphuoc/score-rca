@@ -20,8 +20,8 @@ include("lib/nnlib.jl")
 #-- MLP Regression
 
 struct GroupMlpRegression{M,T}
-    μX::AbstractVector{T}  # for normalisation of observations
-    σX::AbstractVector{T}
+    μx::AbstractVector{T}  # for normalisation of observations
+    σx::AbstractVector{T}
     paj_mask::AbstractMatrix{Bool}
     mlp::M
 end
@@ -31,10 +31,10 @@ Optimisers.trainable(mlp::GroupMlpRegression) = (; mlp.mlp)  # no trainable para
 
 @showfields GroupMlpRegression
 
-function GroupMlpRegression(paj_mask::Matrix{Bool}; X, μX=mean(X, dims=2), σX=std(X, dims=2), hidden_dims=[100, ], activation=Flux.σ)
+function GroupMlpRegression(paj_mask::Matrix{Bool}; x, μx=mean(x, dims=2)', σx=std(x, dims=2)', hidden_dims=[100, ], activation=Flux.σ)
     F = I = input_dim = size(paj_mask, 1)
     H = hidden_dims
-    return GroupMlpRegression(μX, σX,
+    return GroupMlpRegression(μx, σx,
                               paj_mask,
                               Chain(
                                     GroupDense(I, H[1], F),
@@ -45,8 +45,9 @@ end
 
 function (mlp::GroupMlpRegression)(x::AbstractArray{T, 3}) where T
     paj_mask = mlp.paj_mask
-    x0 = x .* paj_mask
+    x0 = @. (x - μx) / σx * paj_mask
     x̂ = mlp.mlp(x0)
+    x̂ * σx + μx
 end
 
 #-- MLP UNet
