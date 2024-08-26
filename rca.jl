@@ -31,7 +31,11 @@ function eval_regressor(regressor, train_df)
     xj = unsqueeze(x, 1);
     batchsize = size(x)[end]
     @≥ x unsqueeze(2) repeat(1, d, 1)
-    loss = sum(abs2, regressor_loss_mask .* (regressor(x) - xj)) / batchsize
+    # @show size(x)
+    # @show size(regressor(x))
+    # @show size(regressor_loss_mask)
+    # @show size(xj)
+    loss = sum(abs2, regressor_loss_mask .* (regressor(x) .- xj)) / batchsize
     @> regressor(x) maximum, minimum, mean, std
     @> xj maximum, minimum, mean, std
     @info "Evaluate regressor" loss
@@ -84,7 +88,7 @@ function train_score_model_from_ground_truth_dag(regressor, unet, train_df; args
             xj = unsqueeze(x, 1);
             x = @> x unsqueeze(2) repeat(1, d, 1)
             loss, (grad,) = Zygote.withgradient(regressor, ) do regressor
-                sum(abs2, regressor_loss_mask .* (regressor(x) - xj) ./ regressor.σX) / batchsize
+                sum(abs2, regressor_loss_mask .* (regressor(x) .- xj) ./ regressor.σX) / batchsize
             end;
             Flux.update!(opt, regressor, grad);
             total_loss += loss

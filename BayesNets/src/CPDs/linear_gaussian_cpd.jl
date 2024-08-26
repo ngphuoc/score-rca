@@ -47,6 +47,7 @@ function Distributions.fit(::Type{LinearGaussianCPD},
 
     LinearGaussianCPD(target, NodeName[], Float64[], μ, σ)
 end
+
 function Distributions.fit(::Type{LinearGaussianCPD},
     data::DataFrame,
     target::NodeName,

@@ -43,11 +43,11 @@ function GroupMlpRegression(paj_mask::Matrix{Bool}; μX=mean(X, dims=2)', σX=st
                                    ))
 end
 
-function (mlp::GroupMlpRegression)(x::AbstractArray{T, 3}) where T
-    paj_mask = mlp.paj_mask
+function (regressor::GroupMlpRegression)(x::AbstractArray{T, 3}) where T
+    @unpack μX, σX, paj_mask, mlp = regressor
     x0 = @. (x - μX) / σX * paj_mask
-    x̂ = mlp.mlp(x0)
-    x̂ * σX + μX
+    x̂ = mlp(x0)
+    x̂ .* σX .+ μX
 end
 
 #-- MLP UNet
