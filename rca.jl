@@ -64,17 +64,20 @@ function get_fcms(ground_truth_dag)
     [m]
 end
 
-function train_score_model_from_ground_truth_dag(regressor, unet, train_df; args)
-    @≥ regressor, unet gpu.()
+"""
+df = vcat(train_df, perturbed_df)
+"""
+function train_regressor(regressor, df; args)
+    @≥ regressor gpu
     paj_mask = regressor.paj_mask
     regressor_loss_mask = @> regressor.paj_mask maximum(dims=1)
-    X = @> train_df Array;
+    X = @> df Array;
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = @> loader first gpu
     d = size(x, 1)
 
     @info "Train regressor, weighted loss by variance"
-    eval_regressor(regressor, train_df)
+    eval_regressor(regressor, df)
     opt = Flux.setup(Optimisers.Adam(args.lr_regressor), regressor);
     # scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_regressor, decay = 0.5))
     progress = Progress(args.epochs, desc="Fitting regressor")
@@ -88,13 +91,24 @@ function train_score_model_from_ground_truth_dag(regressor, unet, train_df; args
             xj = unsqueeze(x, 1);
             x = @> x unsqueeze(2) repeat(1, d, 1)
             loss, (grad,) = Zygote.withgradient(regressor, ) do regressor
-                sum(abs2, regressor_loss_mask .* (regressor(x) .- xj) ./ regressor.σX) / batchsize
+                sum(abs2, regressor_loss_mask .* (regressor(x) .- xj) ./ regressor.σX) / batchsize  # weighted loss by 1/σX
             end;
             Flux.update!(opt, regressor, grad);
             total_loss += loss
         end
         next!(progress; showvalues=[(:loss, total_loss/length(loader))])
     end
+    return regressor
+end
+
+function train_unet(regressor, unet, train_df; args)
+    @≥ regressor, unet gpu.()
+    paj_mask = regressor.paj_mask
+    regressor_loss_mask = @> regressor.paj_mask maximum(dims=1)
+    X = @> train_df Array;
+    loader = DataLoader((X',); args.batchsize, shuffle=true)
+    (x,) = @> loader first gpu
+    d = size(x, 1)
 
     @info "Train unet"
     eval_unet(regressor, unet, train_df)

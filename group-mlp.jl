@@ -31,14 +31,16 @@ Optimisers.trainable(mlp::GroupMlpRegression) = (; mlp.mlp)  # no trainable para
 
 @showfields GroupMlpRegression
 
-function GroupMlpRegression(paj_mask::Matrix{Bool}; μX=mean(X, dims=2)', σX=std(X, dims=2)', hidden_dims=[100, ], activation=Flux.σ)
+function GroupMlpRegression(paj_mask::Matrix{Bool}; μX=mean(X, dims=2)', σX=std(X, dims=2)', hidden_dims=[100, ], activation=swish)
     F = I = input_dim = size(paj_mask, 1)
     H = hidden_dims
     return GroupMlpRegression(μX, σX,
                               paj_mask,
                               Chain(
-                                    GroupDense(I, H[1], F),
-                                    [GroupDense(H[i], H[i+1], F, activation) for i=1:length(H)-1]...,
+                                    GroupDense(I, H[1], F), InstanceNorm(F, activation),
+                                    [Chain(
+                                           GroupDense(H[i], H[i+1], F), InstanceNorm(F, activation),
+                                          ) for i=1:length(H)-1]...,
                                     GroupDense(H[end], 1, F),
                                    ))
 end

@@ -23,7 +23,7 @@ function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidde
     @info "random_nonlinear_dag_generator"
     dag = BayesNet()
     for i in 1:n_root_nodes
-        cpd = StaticCPD(Symbol("X$i"), Normal(0, 1))
+        cpd = RootCPD(Symbol("X$i"), Normal(0, 1))
         push!(dag, cpd)
     end
     for i in 1:n_downstream_nodes
@@ -40,7 +40,7 @@ function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidde
                    )
         mlp[1].weight .= W1
         mlp[2].weight .= W2
-        cpd = MlpGaussianCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, scale)
+        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, Normal(0f0, Float32(scale)))
         push!(dag, cpd)
     end
     return dag
@@ -50,50 +50,61 @@ function Base.getindex(bn::BayesNet, node::Symbol)
     bn.cpds[bn.name_to_index[node]]
 end
 
-function draw_normal_anomaly(dag; args)
+function draw_normal_perturbed_anomaly(dag; args)
+    #-- normal data
     normal_df = rand(dag, args.n_samples)
+
+    #-- perturbed data, 3σ
+    g = deepcopy(dag)
+    for cpd = g.cpds
+        cpd.d = Normal(cpd.d.μ, args.perturbed_scale * cpd.d.σ)
+    end
+    perturbed_df = rand(g, args.n_samples)
+
+    # x = @> normal_df Array transpose Array
+    # d = size(x, 1)
+    # X, batchsize = size(x, 1), size(x)[end]
+    # j_mask = @> I(X) Matrix{Float32}
+    # xj = x[[2], :]
+    # t = rand!(similar(xj)) .* (1f0 - 1f-5) .+ 1f-5
+    # σ_t = marginal_prob_std(t)
+    # σ_t
+    # marginal_prob_std([0.5])
+    # # z = 2rand!(similar(x)) .- 1;
+    # z = randn!(similar(x));
+    # x̃ = x .+ σ_t .* z
+    # # perturbed by mean and variance perturbation
+    # perturbed_df = DataFrame(x̃', names(normal_df))
+    # # x, y = eachrow(cpu(x̃))
+    # # pl_perturbed_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Perturbed data $(x, y)$")
+
     #-- select anomaly nodes
-    anomaly_dag = deepcopy(dag)
-    anomaly_nodes = sample(names(dag), args.n_anomaly_nodes)
-    for anomaly_node = anomaly_nodes
-        anomaly_dag[anomaly_node]
+    g = deepcopy(dag)
+    anomaly_nodes = sample(names(g), args.n_anomaly_nodes)
+    for a = anomaly_nodes
+        g[a].d = Uniform(3, 5)
     end
 
+    #-- anomaly data
+    anomaly_df = rand(g, args.n_anomaly_samples)
 
-    anomaly_df = rand(anomaly_dag, args.n_samples)
+    return normal_df, perturbed_df, anomaly_df  # drawn_noise_samples
+end
 
-    return normal_df, anomaly_df
+using Distributions, Statistics, Plots, LaTeXStrings, Plots.PlotMeasures, ColorSchemes
+gr()
 
-    causal_graph, n_samples, k, list_of_potential_anomaly_nodes
-    drawn_samples = Dict()
-    drawn_noise_samples = Dict()
-    lambdas = Dict()
+function plot_3data(train_df, perturbed_df, anomaly_df; xlim, ylim)
+    #-- defaults
+    default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, color=:seaborn_deep, markersize=2, leg=nothing)
 
-    noises = numpy.random.uniform(3, 5, n_samples)
-    anomaly_nodes = random.sample(list_of_potential_anomaly_nodes, k)
-
-    for (i, node) in enumerate(networkx.topological_sort(causal_graph.graph))
-        causal_model = causal_graph.causal_mechanism(node)
-
-        if is_root_node(causal_graph.graph, node)
-            if node in anomaly_nodes
-                drawn_noise_samples[node] = numpy.array(noises)
-            else
-                drawn_noise_samples[node] = numpy.zeros(n_samples)
-            end
-
-            drawn_samples[node] = drawn_noise_samples[node]
-        else
-            if node in anomaly_nodes
-                drawn_noise_samples[node] = numpy.array(noises)
-            else
-                drawn_noise_samples[node] = numpy.zeros(n_samples)
-            end
-
-            parent_samples = column_stack_selected_numpy_arrays(drawn_samples, get_ordered_predecessors(causal_graph.graph, node))
-
-            drawn_samples[node] = causal_model.evaluate(parent_samples, drawn_noise_samples[node])
-        end
-    end
+    #-- plot data
+    x, y = eachcol(train_df)
+    pl_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"data $(x, y)$")
+    x, y = eachcol(perturbed_df)
+    pl_perturbed = scatter(x, y; xlab=L"x", ylab=L"y", title=L"perturbed data $(x, y)$")
+    x, y = eachcol(anomaly_df)
+    pl_anomaly = scatter(x, y; xlab=L"x", ylab=L"y", title=L"anomaly data $(x, y)$")
+    @> Plots.plot(pl_data, pl_perturbed, pl_anomaly; xlim, ylim, size=(1000, 800)) savefig("fig/3data-2d.png")
 end
 
