@@ -17,14 +17,13 @@ LinearGaussianCPD(target::NodeName, μ::Float64, σ::Float64) = LinearGaussianCP
 name(cpd::LinearGaussianCPD) = cpd.target
 parents(cpd::LinearGaussianCPD) = cpd.parents
 nparams(cpd::LinearGaussianCPD) = length(cpd.a) + 2
-function (cpd::LinearGaussianCPD)(a::Assignment)
 
+function (cpd::LinearGaussianCPD)(a::Assignment)
     # compute A⋅v + b
     μ = cpd.b
     for (i, p) in enumerate(cpd.parents)
         μ += a[p]*cpd.a[i]
     end
-
     Normal(μ, cpd.σ)
 end
 (cpd::LinearGaussianCPD)() = (cpd)(Assignment()) # cpd()

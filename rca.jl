@@ -91,7 +91,7 @@ function train_regressor(regressor, df; args)
             xj = unsqueeze(x, 1);
             x = @> x unsqueeze(2) repeat(1, d, 1)
             loss, (grad,) = Zygote.withgradient(regressor, ) do regressor
-                sum(abs2, regressor_loss_mask .* (regressor(x) .- xj) ./ regressor.σX) / batchsize  # weighted loss by 1/σX
+                sum(abs2, regressor_loss_mask .* (regressor(x) .- xj)) / batchsize
             end;
             Flux.update!(opt, regressor, grad);
             total_loss += loss

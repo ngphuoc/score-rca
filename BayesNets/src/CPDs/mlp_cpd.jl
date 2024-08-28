@@ -14,6 +14,9 @@ name(cpd::MlpCPD) = cpd.target
 parents(cpd::MlpCPD) = cpd.parents
 nparams(cpd::MlpCPD) = 2
 
+(cpd::MlpCPD)() = (cpd)(Assignment()) # cpd()
+(cpd::MlpCPD)(pair::Pair{NodeName}...) = (cpd)(Assignment(pair)) # cpd(:A=>1)
+
 function (cpd::MlpCPD)(a::Assignment)
     x = getindex.([a], cpd.parents)
     μ = cpd.mlp(x)
