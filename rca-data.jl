@@ -57,26 +57,11 @@ function draw_normal_perturbed_anomaly(dag; args)
     #-- perturbed data, 3σ
     g = deepcopy(dag)
     for cpd = g.cpds
-        cpd.d = Normal(cpd.d.μ, args.perturbed_scale * cpd.d.σ)
+        if isempty(parents(cpd))  # perturb root nodes
+            cpd.d = Normal(cpd.d.μ, args.perturbed_scale * cpd.d.σ)
+        end
     end
     perturbed_df = rand(g, args.n_samples)
-
-    # x = @> normal_df Array transpose Array
-    # d = size(x, 1)
-    # X, batchsize = size(x, 1), size(x)[end]
-    # j_mask = @> I(X) Matrix{Float32}
-    # xj = x[[2], :]
-    # t = rand!(similar(xj)) .* (1f0 - 1f-5) .+ 1f-5
-    # σ_t = marginal_prob_std(t)
-    # σ_t
-    # marginal_prob_std([0.5])
-    # # z = 2rand!(similar(x)) .- 1;
-    # z = randn!(similar(x));
-    # x̃ = x .+ σ_t .* z
-    # # perturbed by mean and variance perturbation
-    # perturbed_df = DataFrame(x̃', names(normal_df))
-    # # x, y = eachrow(cpu(x̃))
-    # # pl_perturbed_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Perturbed data $(x, y)$")
 
     #-- select anomaly nodes
     g = deepcopy(dag)
@@ -84,7 +69,6 @@ function draw_normal_perturbed_anomaly(dag; args)
     for a = anomaly_nodes
         g[a].d = Uniform(3, 5)
     end
-
     #-- anomaly data
     anomaly_df = rand(g, args.n_anomaly_samples)
 

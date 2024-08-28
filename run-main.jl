@@ -47,18 +47,21 @@ scale, hidden = 0.1, 100
 dag = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden)
 train_df, perturbed_df, anomaly_df = draw_normal_perturbed_anomaly(dag; args)
 
+#-- normalise data
+X = @> train_df Array transpose Array;
+μX, σX = @> X mean(dims=2), std(dims=2);
+
 # xlim = ylim = (-15, 15)
 # plot_3data(train_df, perturbed_df, anomaly_df; xlim, ylim)
 
 #-- train models
 # X = @> vcat(train_df, perturbed_df) Array transpose Array;
-X = @> train_df Array transpose Array;
-μX, σX = @> X mean(dims=2), std(dims=2);
 hidden_dims = [100, 50, 10]
 @info "Creating unet and mlp models"
-regressor = GroupMlpRegression(B; μX, σX, hidden_dims, activation=Flux.tanh)
+oracle = GroupOracleRegression(dag)
+regressor = GroupMlpRegression(dag; hidden_dims, activation=Flux.tanh)
 df = vcat(train_df, perturbed_df)
-regressor = train_regressor(regressor, train_df; args)
+regressor = train_regressor(regressor, df; args)
 
 unet = GroupMlpUnet(B)
 regressor, unet = train_unet(regressor, unet, train_df; args)
@@ -74,7 +77,7 @@ function arrow0!(x, y, u, v; as=0.07, lw=1, lc=:black, la=1)
     plot!([x+u,x+u-v4[1]], [y+v,y+v-v4[2]], lw=lw, lc=lc, la=la)
 end
 
-function plot_data_gradients(train_df, regressor, unet; xlim, ylim)
+function plot_data_gradients(train_df, perturbed_df, regressor, unet; xlim, ylim)
     @≥ regressor, unet gpu.();
 
     #-- defaults
@@ -85,7 +88,7 @@ function plot_data_gradients(train_df, regressor, unet; xlim, ylim)
     pl_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Data $(x, y)$")
 
     #-- plot r2
-    x = @> train_df Array transpose Array gpu;
+    x = @> vcat(train_df, perturbed_df) Array transpose Array gpu;
     d = size(x, 1)
     total_loss = 0.0
     xj = unsqueeze(x, 1);
@@ -94,8 +97,18 @@ function plot_data_gradients(train_df, regressor, unet; xlim, ylim)
     y, ŷ = @> xj, x̂ getindex.(1,2,:) cpu.() vec.();
     pl_r2 =  scatter(y, ŷ; xlab=L"y", ylab=L"\hat{y}", title=L"Regression $R^2=%$(round(float(r2_score(y, ŷ)), digits=2))$")
 
+    #-- plot oracle r2
+    x = @> vcat(train_df, perturbed_df) Array transpose Array gpu;
+    d = size(x, 1)
+    total_loss = 0.0
+    xj = unsqueeze(x, 1);
+    @≥ x unsqueeze(2) repeat(1, d, 1)
+    x̂ = regressor(x)
+    y, ŷ = @> xj, x̂ getindex.(1,2,:) cpu.() vec.();
+    pl_oracle =  scatter(y, ŷ; xlab=L"y", ylab=L"\hat{y}", title=L"Oracle Regression $R^2=%$(round(float(r2_score(y, ŷ)), digits=2))$")
+
     #-- plot perturbations
-    x = @> train_df Array transpose Array gpu;
+    x = @> perturbed_df Array transpose Array gpu;
     d = size(x, 1)
     X, batchsize = size(x, 1), size(x)[end]
     j_mask = @> I(X) Matrix{Float32} gpu;
@@ -124,7 +137,7 @@ function plot_data_gradients(train_df, regressor, unet; xlim, ylim)
 
     pl_gradient = scatter(x, y, markersize=0, lw=0, color=:white);
     arrow0!.(x, y, u, v; as=3.0, lw=1.0);
-    @> Plots.plot(pl_data, pl_perturbed_data, pl_r2, pl_gradient; xlim, ylim, size=(1000, 800)) savefig("fig/$datetime_prefix-2d.png")
+    @> Plots.plot(pl_data, pl_perturbed_data, pl_r2, pl_oracle, pl_gradient; xlim, ylim, size=(1000, 800)) savefig("fig/$datetime_prefix-2d.png")
 end
 
 xlim = ylim = (-15, 15)

@@ -17,25 +17,60 @@ using JLD2
 include("lib/nn.jl")
 include("lib/nnlib.jl")
 
+#-- ORACLE Regression
+
+struct GroupOracleRegression{M}
+    paj_mask::AbstractMatrix{Bool}
+    oracle::M
+end
+
+@functor GroupOracleRegression
+Optimisers.trainable(oracle::GroupOracleRegression) = (; oracle.oracle)  # no trainable parameters
+
+@showfields GroupOracleRegression
+
+function GroupOracleRegression(dag)
+    paj_mask = @> dag.dag adjacency_matrix Matrix{Bool}
+    m = dag.cpds[2].mlp
+    W1 = m[1].weight
+    W2 = m[2].weight
+    H = size(W1, 1)
+    activation = m[1].σ
+    X = F = size(paj_mask, 1)
+    mlp = Chain(
+          GroupDense(X, H, F, activation),
+          GroupDense(H, X, F),
+         )
+    # to check input output masks, or just set zeros
+    mlp[1].weight[:, 1, 2] .= 0f0
+    mlp[1].weight[:, 2, 2] .= W1
+    mlp[2].weight[1, :, 2] .= 0f0
+    mlp[2].weight[[2], :, 2] .= W2
+    GroupOracleRegression(paj_mask, mlp)
+end
+
+function (regressor::GroupOracleRegression)(x::AbstractArray{T, 3}) where T
+    @unpack paj_mask, oracle = regressor
+    x̂ = oracle(paj_mask .* x)
+end
+
 #-- MLP Regression
 
-struct GroupMlpRegression{M,T}
-    μX::AbstractArray{T}  # for normalisation of observations
-    σX::AbstractArray{T}
+struct GroupMlpRegression{M}
     paj_mask::AbstractMatrix{Bool}
     mlp::M
 end
 
 @functor GroupMlpRegression
-Optimisers.trainable(mlp::GroupMlpRegression) = (; mlp.mlp)  # no trainable parameters
+Optimisers.trainable(regressor::GroupMlpRegression) = (; regressor.mlp)  # no trainable parameters
 
 @showfields GroupMlpRegression
 
-function GroupMlpRegression(paj_mask::Matrix{Bool}; μX=mean(X, dims=2)', σX=std(X, dims=2)', hidden_dims=[100, ], activation=swish)
+function GroupMlpRegression(dag; hidden_dims=[100, ], activation=swish)
+    paj_mask = @> dag.dag adjacency_matrix Matrix{Bool}
     F = I = input_dim = size(paj_mask, 1)
     H = hidden_dims
-    return GroupMlpRegression(μX, σX,
-                              paj_mask,
+    return GroupMlpRegression(paj_mask,
                               Chain(
                                     GroupDense(I, H[1], F), InstanceNorm(F, activation),
                                     [Chain(
@@ -46,10 +81,8 @@ function GroupMlpRegression(paj_mask::Matrix{Bool}; μX=mean(X, dims=2)', σX=st
 end
 
 function (regressor::GroupMlpRegression)(x::AbstractArray{T, 3}) where T
-    @unpack μX, σX, paj_mask, mlp = regressor
-    x0 = @. (x - μX) / σX * paj_mask
-    x̂ = mlp(x0)
-    x̂ .* σX .+ μX
+    @unpack paj_mask, mlp = regressor
+    x̂ = mlp(paj_mask .* x)
 end
 
 #-- MLP UNet
