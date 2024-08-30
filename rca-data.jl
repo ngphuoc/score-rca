@@ -77,8 +77,7 @@ function draw_normal_perturbed_anomaly(dag; args)
     return normal_df, perturbed_df, anomaly_df  # drawn_noise_samples
 end
 
-using Distributions, Statistics, Plots, LaTeXStrings, Plots.PlotMeasures, ColorSchemes
-gr()
+include("lib/plot-utils.jl")
 
 function plot_3data(train_df, perturbed_df, anomaly_df; xlim, ylim)
     #-- defaults

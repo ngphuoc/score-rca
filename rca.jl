@@ -24,8 +24,8 @@ function df_(pydf)
     @> pydf PyPandasDataFrame DataFrame
 end
 
-function eval_regressor(regressor, train_df)
-    x = @> train_df Array transpose Array gpu;
+function eval_regressor(regressor, normal_df)
+    x = @> normal_df Array transpose Array gpu;
     d = size(x, 1)
     regressor_loss_mask = @> regressor.paj_mask maximum(dims=1)
     xj = unsqueeze(x, 1);
@@ -41,8 +41,16 @@ function eval_regressor(regressor, train_df)
     @info "Evaluate regressor" loss
 end
 
-function eval_unet(regressor, unet, train_df)
-    x = @> train_df Array transpose Array gpu;
+function eval_unet(regressor, unet, normal_df)
+    x = @> normal_df Array transpose Array gpu;
+    d = size(x, 1)
+    @≥ x gpu
+    loss = score_matching_loss(unet, x)
+    @info "Evaluate unet" loss
+end
+
+function eval_group_unet(regressor, unet, normal_df)
+    x = @> normal_df Array transpose Array gpu;
     d = size(x, 1)
     @≥ x gpu unsqueeze(2) repeat(1, d, 1)
     kw = conditional_noise_grad_sampling(regressor, x)
@@ -65,7 +73,7 @@ function get_fcms(ground_truth_dag)
 end
 
 """
-df = vcat(train_df, perturbed_df)
+df = vcat(normal_df, perturbed_df)
 """
 function train_regressor(regressor, df; args)
     @≥ regressor gpu
@@ -82,7 +90,8 @@ function train_regressor(regressor, df; args)
     # scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_regressor, decay = 0.5))
     progress = Progress(args.epochs, desc="Fitting regressor")
 
-    for epoch = 1:args.epochs
+    # for epoch = 1:args.epochs
+    for epoch = 1:1
         total_loss = 0.0
         # epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
         for (x,) = loader
@@ -101,17 +110,47 @@ function train_regressor(regressor, df; args)
     return regressor
 end
 
-function train_unet(regressor, unet, train_df; args)
+function train_unet(regressor, unet, df; args)
     @≥ regressor, unet gpu.()
-    paj_mask = regressor.paj_mask
-    regressor_loss_mask = @> regressor.paj_mask maximum(dims=1)
-    X = @> train_df Array;
+    X = @> df Array;
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = @> loader first gpu
     d = size(x, 1)
 
     @info "Train unet"
-    eval_unet(regressor, unet, train_df)
+    eval_unet(regressor, unet, df)
+    opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
+    # scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_unet, decay = 0.5))
+    progress = Progress(args.epochs÷5, desc="Fitting unet")
+    for epoch = 1:args.epochs
+        total_loss = 0.0
+        # learning rate 10 schedules
+        # epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
+        for (x,) = loader
+            @≥ x gpu
+            loss, (grad,) = Flux.withgradient(unet, ) do unet
+                score_matching_loss(unet, x)
+            end
+            Flux.update!(opt, unet, grad)
+            total_loss += loss
+        end
+        next!(progress; showvalues=[(:loss, total_loss/length(loader))])
+    end
+
+    return regressor, unet
+end
+
+function train_group_unet(regressor, unet, df; args)
+    @≥ regressor, unet gpu.()
+    paj_mask = regressor.paj_mask
+    regressor_loss_mask = @> regressor.paj_mask maximum(dims=1)
+    X = @> df Array;
+    loader = DataLoader((X',); args.batchsize, shuffle=true)
+    (x,) = @> loader first gpu
+    d = size(x, 1)
+
+    @info "Train unet"
+    eval_unet(regressor, unet, df)
     opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
     scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_unet, decay = 0.5))
     progress = Progress(args.epochs÷5, desc="Fitting unet")
@@ -138,7 +177,7 @@ end
 """
 model_type=NonlinearScoreCPD
 """
-function create_model_from_ground_truth_dag(g0, all_nodes, train_df; args, model_type=NonlinearGaussianCPD)
+function create_model_from_ground_truth_dag(g0, all_nodes, normal_df; args, model_type=NonlinearGaussianCPD)
     d = length(all_nodes)
     B = adjacency_matrix(g0)
     g = DiGraph(B)
@@ -146,12 +185,12 @@ function create_model_from_ground_truth_dag(g0, all_nodes, train_df; args, model
         ii = parent_indices(B, j)
         node = all_nodes[j]
         if length(ii) == 0
-            # fit(StaticCPD{Normal}, df_(train_df), node)
+            # fit(StaticCPD{Normal}, df_(normal_df), node)
             cpd = StaticCPD(node, Normal(0, 1))
         else
             pa = all_nodes[ii]
-            # fit(LinearBayesianCPD, df_(train_df), node, pa)
-            cpd = fit(model_type, df_(train_df), node, pa; args)
+            # fit(LinearBayesianCPD, df_(normal_df), node, pa)
+            cpd = fit(model_type, df_(normal_df), node, pa; args)
             cpd
         end
     end
@@ -225,7 +264,7 @@ function create_model_from_sub_graph_with_w_noise_scale(g0, sub_nodes, all_nodes
     return bn
 end
 
-function fit_dag!(dag, train_df)
+function fit_dag!(dag, normal_df)
     for node in dag.graph.nodes
         if is_root_node(dag.graph, node) |> pytruth
             dag.set_causal_mechanism(node, EmpiricalDistribution())
@@ -234,7 +273,7 @@ function fit_dag!(dag, train_df)
         end
     end
     # Fit causal mechanisms..
-    gcm.fit(dag, train_df)
+    gcm.fit(dag, normal_df)
     return dag
 end
 

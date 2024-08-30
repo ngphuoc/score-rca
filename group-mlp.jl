@@ -87,7 +87,7 @@ function (regressor::GroupMlpRegression)(x::AbstractArray{T, 3}) where T
     x̂ = mlp(paj_mask .* x)
 end
 
-#-- MLP UNet
+#-- Group MLP UNet
 
 struct GroupMlpUnet
     mask::AbstractMatrix{Bool}
