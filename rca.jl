@@ -41,7 +41,7 @@ function eval_regressor(regressor, normal_df)
     @info "Evaluate regressor" loss
 end
 
-function eval_unet(regressor, unet, normal_df)
+function eval_unet(unet, normal_df)
     x = @> normal_df Array transpose Array gpu;
     d = size(x, 1)
     @≥ x gpu
@@ -110,15 +110,15 @@ function train_regressor(regressor, df; args)
     return regressor
 end
 
-function train_unet(regressor, unet, df; args)
-    @≥ regressor, unet gpu.()
+function train_unet(unet, df; args)
+    @≥ unet gpu
     X = @> df Array;
     loader = DataLoader((X',); args.batchsize, shuffle=true)
     (x,) = @> loader first gpu
     d = size(x, 1)
 
     @info "Train unet"
-    eval_unet(regressor, unet, df)
+    eval_unet(unet, df)
     opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
     # scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_unet, decay = 0.5))
     progress = Progress(args.epochs÷5, desc="Fitting unet")
@@ -131,13 +131,14 @@ function train_unet(regressor, unet, df; args)
             loss, (grad,) = Flux.withgradient(unet, ) do unet
                 score_matching_loss(unet, x)
             end
+            grad
             Flux.update!(opt, unet, grad)
             total_loss += loss
         end
         next!(progress; showvalues=[(:loss, total_loss/length(loader))])
     end
 
-    return regressor, unet
+    return unet
 end
 
 function train_group_unet(regressor, unet, df; args)

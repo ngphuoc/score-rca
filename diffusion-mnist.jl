@@ -128,10 +128,7 @@ function train(; kws...)
 
     loader = get_data(args.batch_size)
     unet = UNet(1) |> gpu
-    opt = ADAM(args.η)
-
-    # parameters
-    ps = Flux.params(unet)
+    opt = Flux.setup(Optimisers.Adam(args.η), unet);
 
     !ispath(args.save_path) && mkpath(args.save_path)
 
@@ -149,10 +146,10 @@ function train(; kws...)
 
         for (x, _) in loader
             x = gpu(x)
-            loss, grad = Flux.withgradient(ps) do
+            loss, (grad,) = Flux.withgradient(unet, ) do unet
                 score_matching_loss(unet, x)
             end
-            Flux.Optimise.update!(opt, ps, grad)
+            Flux.Optimise.update!(opt, unet, grad)
             # progress meter
             next!(progress; showvalues=[(:loss, loss)])
 
@@ -166,17 +163,6 @@ function train(; kws...)
         end
     end
 
-    # if epoch % args.save_every == 0
-    # if epoch % 2 == 0
-    #     # save model
-    #     # time_str = Dates.format(now(), "yyyy-mm-dd HH:MM:SS")
-    #     model_str = "&batchsize=$(args.batch_size)&eta=$(args.η)&epoch=$epoch($(args.epochs))"
-    #     model_path = joinpath(args.save_path, "diffusion-mnist$model_str.jld2")
-    #     let unet_state = Flux.state(cpu(unet)), args = struct2dict(args)
-    #         JLD2.@save model_path unet_state args
-    #         @info "Model saved: $(model_path)"
-    #     end
-    # end
     # save model
     epoch = args.epochs
     model_str = "&batchsize=$(args.batch_size)&eta=$(args.η)&epoch=$epoch($(args.epochs))"
@@ -187,7 +173,7 @@ function train(; kws...)
     end
 end
 
-if abspath(PROGRAM_FILE) == @__FILE__
+# if abspath(PROGRAM_FILE) == @__FILE__
     train()
-end
+# end
 

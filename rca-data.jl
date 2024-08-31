@@ -20,7 +20,7 @@ n_root_nodes = 1
 n_downstream_nodes = 1
 activation = Flux.relu
 """
-function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden, activation = Flux.relu)
+function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden, activation = Flux.relu)
     @info "random_nonlinear_dag_generator"
     dag = BayesNet()
     for i in 1:n_root_nodes
@@ -41,7 +41,7 @@ function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidde
                    ) |> f64
         mlp[1].weight .= W1
         mlp[2].weight .= W2
-        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, Normal(0.0, Float64(scale)))
+        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, Normal(0.0, Float64(noise_scale)))
         push!(dag, cpd)
     end
     return dag
