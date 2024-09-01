@@ -93,7 +93,7 @@ end
 Flux.update!(opt, unet, grad)
 
 opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
-progress = Progress(args.epochs, desc="Fitting unet")
+progress = Progress(args.epochs, desc="Fitting unet");
 for epoch = 1:args.epochs
     total_loss = 0.0
     for (x,) = loader
