@@ -12,7 +12,6 @@ import Base.show, Base.eltype
 using Flux
 import Flux._big_show, Flux._show_children
 using ProgressMeter
-using Printf
 using BSON
 using Random
 import NNlib: batched_mul
@@ -33,7 +32,6 @@ include("models/blocks.jl")
 include("models/attention.jl")
 include("models/batched_mul_4d.jl")
 include("models/UNetFixed.jl")
-include("models/UNet.jl")
 include("models/UNetConditioned.jl")
 
 args = @env begin
@@ -56,7 +54,7 @@ args = @env begin
     decay = 1e-5  # weight decay parameter for AdamW
     to_device = Flux.gpu
     batchsize = 32
-    epochs = 1
+    epochs = 10
     save_path = ""
     load_path = "data/exp2d-joint.bson"
     # RCA
@@ -86,64 +84,78 @@ val_loader = Flux.DataLoader((X_val,) |> gpu; batchsize=32, shuffle=false);
 d = size(x, 1)
 
 
-@info "Model"
+@info "layers"
 
 struct Diffusion2d{T}
     σ_max::Float32
-    model::T
+    layers::T
 end
 
 @functor Diffusion2d
 # @showfields Diffusion2d
-Optimisers.trainable(unet::Diffusion2d) = (; unet.model)
+Optimisers.trainable(net::Diffusion2d) = (; net.layers)
 
 function Diffusion2d(; args)
     @assert args.input_dim == 2
-    X, H, E, n_timesteps = (2, args.hidden_dim, args.embed_dim, args.n_timesteps)
-    model = ConditionalChain(
-                             Dense(2, H), swish,
-                             Dense(H, H), swish,
-                             Dense(H, H), swish,
-                             Dense(H, 2),
-                            )
-    return Diffusion2d(σ_max, model)
+    X, H, E, fourier_scale = (2, args.hidden_dim, args.embed_dim, args.fourier_scale)
+    return Diffusion2d(σ_max, (
+                               f1 = Dense(2, H),
+                               f2 = Dense(H, H),
+                               f3 = Dense(H, H),
+                               f4 = Dense(H, 2),
+                               e1 = Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H)),
+                               e2 = Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H)),
+                               e3 = Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H)),
+                              )
+                      )
 end
 
-function (unet::Diffusion2d)(x::AbstractMatrix{T}, t) where {T}
-    h = unet.model(x, t)
-    σ_t = expand_dims(marginal_prob_std(t; unet.σ_max), 1)
+function (net::Diffusion2d)(x::AbstractMatrix{T}, t::AbstractVector{T}) where T
+    @unpack f1, f2, f3, f4, e1, e2, e3 = net.layers
+    h = x
+    h = f1(h) + e1(t)
+    h = f2(h) + e2(t)
+    h = f3(h) + e3(t)
+    h = f4(h)
+    σ_t = expand_dims(marginal_prob_std(t; net.σ_max), 1)
     h ./ σ_t
 end
 
-unet = @> Diffusion2d(; args) gpu
-score_matching_loss(unet, x)  # check clip_var
+function sm_loss(net, x::AbstractMatrix{<:Real}; ϵ=1.0f-5, σ_max=25f0)
+    batchsize = size(x)[end]
+    t = rand!(similar(x, batchsize)) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+    z = randn!(similar(x))
+    σ_t = expand_dims(marginal_prob_std(t; σ_max), 1)
+    # (batch) of perturbed 𝘹(𝘵)'s to approximate 𝔼 wrt. 𝘹(t) ∼ 𝒫₀ₜ(𝘹(𝘵)|𝘹(0))
+    x̃ = x + z .* σ_t
+    score = net(x̃, t)
+    return sum(abs2, score .* σ_t + z) / batchsize
+end
+
+net = @> Diffusion2d(; args) gpu
 
 (x,) = loader |> first
 batchsize = size(x)[end]
-t = rand!(similar(x, batchsize)) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
-t = round.(Int, n_timesteps .* t)
-@≥ x, t gpu.()
-score_matching_loss(unet, x, t)
+@≥ x gpu
+sm_loss(net, x)
 
-opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
-loss, (grad,) = Flux.withgradient(unet, ) do unet
-    score_matching_loss(unet, x)
+opt = Flux.setup(Optimisers.Adam(args.lr_unet), net);
+loss, (grad,) = Flux.withgradient(net, ) do net
+    sm_loss(net, x)
 end
-Flux.update!(opt, unet, grad);
+Flux.update!(opt, net, grad);
 
-opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
-progress = Progress(args.epochs, desc="Fitting unet");
+opt = Flux.setup(Optimisers.Adam(args.lr_unet), net);
+progress = Progress(args.epochs, desc="Fitting net");
 for epoch = 1:args.epochs
     total_loss = 0.0
     for (x,) = loader
         batchsize = size(x)[end]
-        t = rand!(similar(x, batchsize)) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
-        t = round.(Int, n_timesteps .* t)
-        @≥ x, t gpu.()
-        loss, (grad,) = Flux.withgradient(unet, ) do unet
-            score_matching_loss(unet, x, t)
+        @≥ x gpu
+        loss, (grad,) = Flux.withgradient(net, ) do net
+            sm_loss(net, x)
         end
-        Flux.update!(opt, unet, grad)
+        Flux.update!(opt, net, grad)
         total_loss += loss
     end
     next!(progress; showvalues=[(:loss, total_loss/length(loader))])
