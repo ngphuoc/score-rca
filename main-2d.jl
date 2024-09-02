@@ -4,7 +4,7 @@ include("./rca.jl")
 include("./rca-data.jl")
 include("./lib/diffusion.jl")
 include("./random-graph-datasets.jl")
-include("./mlp-unet.jl")
+include("./mlp-unet-2d.jl")
 
 datetime_prefix = @> string(now())[1:16] replace(":"=>"h")
 
@@ -12,7 +12,7 @@ args = @env begin
     # Denoising
     input_dim = 2
     output_dim = 2
-    # hidden_dims = [50, 10]
+    hidden_dims = [50, 10]
     hidden_dim = 32  # hiddensize factor
     n_layers = 3
     embed_dim = 50  # hiddensize factor
@@ -44,8 +44,7 @@ args = @env begin
     seed = 1  #  random seed
 end
 
-@info "Creating new data and training new models"
-
+@info "Data"
 n_nodes = round(Int, min_depth^2 / 3 + 1)
 n_root_nodes = 1
 n_downstream_nodes = n_nodes - n_root_nodes
@@ -63,10 +62,12 @@ anomaly_df = @. (anomaly_df - μX') / σX'
 @> normal_df Array minimum(dims=1), maximum(dims=1)
 @> perturbed_df Array minimum(dims=1), maximum(dims=1)
 
+@info "Model"
 unet = MlpUnet(; args)
 df = normal_df
 unet = train_unet(unet, df; args)
 
+@info "Plots"
 include("plot-joint.jl")
 xlim = ylim = (-5, 5)
 plot_gradients(normal_df, perturbed_df, unet; xlim, ylim, args)
