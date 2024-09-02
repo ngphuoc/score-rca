@@ -1,24 +1,19 @@
 using Revise
-using Flux
-using Flux: crossentropy
-using Flux.Data: DataLoader
-using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
-using Plots
-using Plots
-using Flux
-using Dates
-using BSON, JSON
-using Printf
 import Base.show, Base.eltype
-using Flux
 import Flux._big_show, Flux._show_children
-using ProgressMeter
-using Printf
-using BSON
-using Random
 import NNlib: batched_mul
+using BSON, JSON
+using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
+using Dates
+using Flux
+using Flux.Data: DataLoader
+using Flux: crossentropy
 using Optimisers
 using Optimisers: Optimisers, trainable
+using Plots
+using Printf
+using ProgressMeter
+using Random
 
 include("./imports.jl")
 include("./lib/diffusion.jl")
