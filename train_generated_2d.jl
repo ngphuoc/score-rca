@@ -33,7 +33,7 @@ include("models/batched_mul_4d.jl")
 include("models/UNetFixed.jl")
 include("models/UNet.jl")
 include("models/UNetConditioned.jl")
-# include("datasets.jl")
+include("datasets.jl")
 include("utilities.jl")
 include("diffusion-2d.jl")
 
@@ -84,13 +84,13 @@ loader = Flux.DataLoader((X,) |> gpu; batchsize=32, shuffle=true);
 val_loader = Flux.DataLoader((X_val,) |> gpu; batchsize=32, shuffle=false);
 (x,) = @> loader first gpu
 d = size(x, 1)
-score_matching_loss(unet, x)
+score_matching_loss(unet, x)  # check clip_var
 
 opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
 loss, (grad,) = Flux.withgradient(unet, ) do unet
     score_matching_loss(unet, x)
 end
-Flux.update!(opt, unet, grad)
+Flux.update!(opt, unet, grad);
 
 opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
 progress = Progress(args.epochs, desc="Fitting unet");

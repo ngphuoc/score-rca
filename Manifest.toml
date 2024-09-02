@@ -2,12 +2,35 @@
 
 julia_version = "1.10.5"
 manifest_format = "2.0"
-project_hash = "915d2d680136e60722680c35839c25644db18c7d"
+project_hash = "0a90404c10c3f3acbea0dad7ce7fafee7d8f4ad6"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
 uuid = "a4c015fc-c6ff-483c-b24f-f7ea428134e9"
 version = "0.0.1"
+
+[[deps.AbstractDifferentiation]]
+deps = ["ExprTools", "LinearAlgebra", "Requires"]
+git-tree-sha1 = "643373e6a3d4c180a3487abd91f689e3812b1274"
+uuid = "c29ec348-61ec-40c8-8164-b8c60e9d9f3d"
+version = "0.5.3"
+
+    [deps.AbstractDifferentiation.extensions]
+    AbstractDifferentiationChainRulesCoreExt = "ChainRulesCore"
+    AbstractDifferentiationFiniteDifferencesExt = "FiniteDifferences"
+    AbstractDifferentiationForwardDiffExt = ["DiffResults", "ForwardDiff"]
+    AbstractDifferentiationReverseDiffExt = ["DiffResults", "ReverseDiff"]
+    AbstractDifferentiationTrackerExt = "Tracker"
+    AbstractDifferentiationZygoteExt = "Zygote"
+
+    [deps.AbstractDifferentiation.weakdeps]
+    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
+    DiffResults = "163ba53b-c6d8-5494-b064-1a9d43ac40c5"
+    FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
+    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+    ReverseDiff = "37e2e3b7-166d-5795-8a7a-e32c996b4267"
+    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
+    Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -624,6 +647,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "1c6317308b9dc757616f0b5cb379db10494443a7"
 uuid = "2e619515-83b5-522b-bb60-26c02a35a201"
 version = "2.6.2+0"
+
+[[deps.ExponentialAction]]
+deps = ["AbstractDifferentiation", "ChainRulesCore", "LinearAlgebra", "SparseArrays"]
+git-tree-sha1 = "f09115e954f495cab57771b30a31b06b04e79d31"
+uuid = "e24c0720-ea99-47e8-929e-571b494574d3"
+version = "0.2.9"
 
 [[deps.ExprTools]]
 git-tree-sha1 = "27415f162e6028e81c72b82ef756bf321213b6ec"
