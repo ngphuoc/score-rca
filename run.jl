@@ -1,3 +1,4 @@
 include("./main-2d.jl")
-include("./train_generated_2d.jl")
+include("./main-generated-2d.jl")
+include("./main-generated-2d-v1.jl")
 

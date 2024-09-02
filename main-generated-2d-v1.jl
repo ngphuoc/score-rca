@@ -75,7 +75,6 @@ args = @env begin
     d_hid = 16
 end
 
-
 @info "Data"
 
 X = normalize_neg_one_to_one(make_spiral(n_batch))
@@ -84,7 +83,6 @@ loader = Flux.DataLoader((X,) |> gpu; batchsize=32, shuffle=true);
 val_loader = Flux.DataLoader((X_val,) |> gpu; batchsize=32, shuffle=false);
 (x,) = @> loader first gpu
 d = size(x, 1)
-
 
 @info "Model"
 
@@ -96,6 +94,7 @@ end
 function RoundTimesteps(max_timesteps::Int)
     function round_timesteps(t::AbstractArray{T,N}) where {T<:Real,N}
         round.(Int, max_timesteps .* t)
+        # round.(max_timesteps .* t)
     end
 end
 

@@ -56,7 +56,7 @@ args = @env begin
     decay = 1e-5  # weight decay parameter for AdamW
     to_device = Flux.gpu
     batchsize = 32
-    epochs = 300
+    epochs = 1
     save_path = ""
     load_path = "data/exp2d-joint.bson"
     # RCA
@@ -93,12 +93,6 @@ struct Diffusion2d{T}
     model::T
 end
 
-function RoundTimesteps(max_timesteps::Int)
-    function round_timesteps(t::AbstractArray{T,N}) where {T<:Real,N}
-        round.(Int, max_timesteps .* t)
-    end
-end
-
 @functor Diffusion2d
 # @showfields Diffusion2d
 Optimisers.trainable(unet::Diffusion2d) = (; unet.model)
@@ -124,22 +118,31 @@ end
 unet = @> Diffusion2d(; args) gpu
 score_matching_loss(unet, x)  # check clip_var
 
-# opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
-# loss, (grad,) = Flux.withgradient(unet, ) do unet
-#     score_matching_loss(unet, x)
-# end
-# Flux.update!(opt, unet, grad);
+(x,) = loader |> first
+batchsize = size(x)[end]
+t = rand!(similar(x, batchsize)) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+t = round.(Int, n_timesteps .* t)
+@≥ x, t gpu.()
+score_matching_loss(unet, x, t)
+
+opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
+loss, (grad,) = Flux.withgradient(unet, ) do unet
+    score_matching_loss(unet, x)
+end
+Flux.update!(opt, unet, grad);
 
 opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
 progress = Progress(args.epochs, desc="Fitting unet");
 for epoch = 1:args.epochs
     total_loss = 0.0
     for (x,) = loader
-        @≥ x gpu
+        batchsize = size(x)[end]
+        t = rand!(similar(x, batchsize)) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+        t = round.(Int, n_timesteps .* t)
+        @≥ x, t gpu.()
         loss, (grad,) = Flux.withgradient(unet, ) do unet
-            score_matching_loss(unet, x)
+            score_matching_loss(unet, x, t)
         end
-        grad
         Flux.update!(opt, unet, grad)
         total_loss += loss
     end
