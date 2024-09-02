@@ -1,4 +1,3 @@
-using StatsBase
 
 function sample_natural_number(; init_mass)
     current_mass = init_mass

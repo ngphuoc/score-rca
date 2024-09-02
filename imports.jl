@@ -21,6 +21,9 @@ pyimport("sys").path
 tqdm = pyimport("tqdm").tqdm
 pydeepcopy = pyimport("copy").deepcopy
 
+
+@unpack plot_score_field, sample_2d = pyimport("data2d")
+
 @unpack random_nonlinear_dag_generator, random_linear_dag_generator, draw_anomaly_samples, draw_samples_2, our_approach_rankings, naive_approach, MySquaredRegressor, get_noise_coefficient, evaluate_results_ndcg, summarize_result, get_ground_truth_rankings, ZOutlierScorePy, ShapleyApproximationMethods, pickle_save, pickle_load = pyimport("rca_helper")
 @unpack draw_samples, is_root_node, EmpiricalDistribution, InvertibleStructuralCausalModel, ScipyDistribution, AdditiveNoiseModel = dowhy.gcm
 @unpack gcm = dowhy
