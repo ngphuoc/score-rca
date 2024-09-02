@@ -119,25 +119,23 @@ pl_sm_data = scatter(x, y; xlab=L"x", ylab=L"y", title="Perturbed score matching
 
 #-- plot gradients
 μx, σx = @> X_val mean(dims=2), std(dims=2)
+xlim = ylim = (-4, 4)
 x = @> Iterators.product(range(xlim..., length=50), range(ylim..., length=50)) collect vec;
 x = @> reinterpret(reshape, Float64, x) Array{Float32} gpu;
+d = size(x, 1)
 t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
 σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
 J = @> dnet(x, t)
 @≥ J, x cpu.()
+
+# x, y = eachrow(x);
+# u, v = eachrow(0.2J);
+# pl_gradient = scatter(x, y, markersize=0, lw=0, color=:white);
+# arrow0!.(x, y, u, v; as=0.2, lw=1.0);
 mesh, scores = @> x', J' Array.()
 plot_score_field(mesh, scores, width=0.002, vis_path="fig/score-field.png")
 
-#-- plot outlier gradients
-X = @> anomaly_df Array;
-X_val = X' |> cpu
-x = @> X_val gpu;
-t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
-σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
-J = @> dnet(x, t)
-@≥ J, x cpu.()
-mesh, scores = @> x', J' Array.()
-plot_score_field(mesh, scores, width=0.002, vis_path="fig/score-field-outlier.png")
+
 
 @> Plots.plot(pl_data, pl_sm_data; xlim, ylim, size=(1000, 800)) savefig("fig/main-rca-2d.png")
 
