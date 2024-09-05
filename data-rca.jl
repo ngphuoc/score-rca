@@ -48,7 +48,7 @@ args = @env begin
     load_path = "data/main-2d.bson"
     lr = 1e-3  # learning rate
     min_depth = 2  # minimum depth of ancestors for the target node
-    n_anomaly_nodes = 2
+    anomaly_fraction = 0.1
     n_anomaly_samples = 100  # n faulty observations
     n_batch = 10_000
     n_layers = 3
@@ -117,6 +117,9 @@ function Base.getindex(bn::BayesNet, node::Symbol)
     bn.cpds[bn.name_to_index[node]]
 end
 
+"""
+Also return data, noise, and ∇noise
+"""
 function draw_normal_perturbed_anomaly(dag; args)
     #-- normal data
     normal_df = rand(dag, args.n_samples)
@@ -133,6 +136,7 @@ function draw_normal_perturbed_anomaly(dag; args)
 
     #-- select anomaly nodes
     g = deepcopy(dag)
+    n_anomaly_nodes = ceil(Int, 0.1args.anomaly_fraction)
     anomaly_nodes = sample(names(g), args.n_anomaly_nodes)
     for a = anomaly_nodes
         g[a].d = Uniform(3, 5)
