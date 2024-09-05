@@ -28,6 +28,7 @@ export
     ParentFunctionalCPD,           # for implementing quick and easy custom CPDs that only use the parents
     CategoricalCPD,                # a table lookup based on discrete parental assignment
     RootCPD,             # Normal with linear mean
+    LocationCPD,             # Normal with linear mean
     MlpCPD,             # Normal with linear mean
     MlpGaussianCPD,             # Normal with linear mean
     LinearGaussianCPD,             # Normal with linear mean
@@ -163,6 +164,7 @@ include("categorical_cpd.jl")
 include("linear_gaussian_cpd.jl")
 include("nonlinear_gaussian_cpd.jl")
 include("root_cpd.jl")
+include("location_cpd.jl")
 include("mlp_cpd.jl")
 include("mlp_gaussian_cpd.jl")
 include("nonlinear_score_cpd.jl")

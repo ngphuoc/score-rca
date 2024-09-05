@@ -1,9 +1,8 @@
-using StatsBase
 using LinearAlgebra
 using Images
 using Optimisers: Leaf
 
-## model sizes 
+## model sizes
 
 function conv_output_size(input_size::Int, filter_size::Int, stride::Int=1, pad::Int=0)
     floor(Int, (input_size + 2 * pad - filter_size) / stride) + 1

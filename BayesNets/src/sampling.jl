@@ -22,13 +22,11 @@ Generates a DataFrame containing a dataset of variable assignments.
 Always return a DataFrame with `nsamples` rows.
 """
 function Random.rand(bn::BayesNet, sampler::BayesNetSampler, nsamples::Integer)
-
     a = rand(bn, sampler)  # reuse mem
     df = DataFrame()
     for cpd in bn.cpds
         df[!, name(cpd)] = Array{typeof(a[name(cpd)])}(undef, nsamples)
     end
-
     for i in 1:nsamples
         rand!(a, bn, sampler)
         for cpd in bn.cpds
@@ -36,7 +34,33 @@ function Random.rand(bn::BayesNet, sampler::BayesNetSampler, nsamples::Integer)
             df[i, n] = a[n]
         end
     end
+    df
+end
 
+"""
+Generates a DataFrame containing a dataset of variable assignments.
+Always return a DataFrame with `nsamples` rows.
+"""
+function forward(bn::BayesNet, nsamples::Integer)
+    sampler = DirectSampler()
+    xs, μs, εs = rand(bn, sampler), rand(bn, sampler), rand(bn, sampler)  # reuse mem
+    df = DataFrame()
+    df_location = DataFrame()
+    df_noise = DataFrame()
+    for cpd in bn.cpds
+        df[!, name(cpd)] = Array{typeof(xs[name(cpd)])}(undef, nsamples)
+        df_location[!, name(cpd)] = Array{typeof(μs[name(cpd)])}(undef, nsamples)
+        df_noise[!, name(cpd)] = Array{typeof(εs[name(cpd)])}(undef, nsamples)
+    end
+    for i in 1:nsamples
+        forward!((xs, μs, εs), bn, sampler)
+        for cpd in bn.cpds
+            n = name(cpd)
+            df[i, n] = xs[n]
+            df_location[i, n] = μs[n]
+            df_noise[i, n] = εs[n]
+        end
+    end
     df
 end
 
@@ -48,6 +72,17 @@ Straightforward sampling from a BayesNet.
 The default sampler.
 """
 struct DirectSampler <: BayesNetSampler end
+
+function forward!((xs, μs, εs), bn::BayesNet, sampler)
+    for cpd in bn.cpds
+        x, μ, ε = forward(cpd, xs, sampler)
+        node = name(cpd)
+        xs[node] = x
+        μs[node] = μ
+        εs[node] = ε
+    end
+    xs, μs, εs
+end
 
 function Random.rand!(a::Assignment, bn::BayesNet, sampler::DirectSampler)
     for cpd in bn.cpds
@@ -195,3 +230,4 @@ function sample_weighted_dataframe!(a::Assignment, weighted_dataframe::DataFrame
     end
     return a
 end
+

@@ -1,4 +1,70 @@
-using StatsBase
+using Revise
+import Base.show, Base.eltype
+import Flux._big_show, Flux._show_children
+import NNlib: batched_mul
+using BSON, JSON
+using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
+using Dates
+using Flux
+using Flux.Data: DataLoader
+using Flux: crossentropy
+using Optimisers
+using Optimisers: Optimisers, trainable
+using Plots
+using Printf
+using ProgressMeter
+using Random
+
+include("./imports.jl")
+include("./lib/diffusion.jl")
+include("./lib/graph.jl")
+include("./lib/nn.jl")
+include("./lib/nnlib.jl")
+include("./lib/utils.jl")
+include("./mlp-unet-2d.jl")
+include("./random-graph-datasets.jl")
+include("./rca.jl")
+include("utilities.jl")
+include("models/embed.jl")
+include("models/ConditionalChain.jl")
+include("models/blocks.jl")
+include("models/attention.jl")
+include("models/batched_mul_4d.jl")
+include("models/UNetFixed.jl")
+include("models/UNetConditioned.jl")
+
+args = @env begin
+    activation=swish
+    batchsize = 100
+    d_hid = 16
+    decay = 1e-5  # weight decay parameter for AdamW
+    epochs = 10
+    fourier_scale=30.0f0
+    has_node_outliers = true  # node outlier setting
+    hidden_dim = 300  # hiddensize factor
+    hidden_dims = [300, 300]
+    input_dim = 2
+    save_path = ""
+    load_path = "data/main-2d.bson"
+    lr = 1e-3  # learning rate
+    min_depth = 2  # minimum depth of ancestors for the target node
+    anomaly_fraction = 0.1
+    n_anomaly_samples = 100  # n faulty observations
+    n_batch = 10_000
+    n_layers = 3
+    n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
+    n_root_nodes = 1  # n_root_nodes
+    n_samples = 100000  # n observations
+    n_timesteps = 100
+    noise_scale = 1.0
+    output_dim = 2
+    perturbed_scale = 1f0
+    seed = 1  #  random seed
+    to_device = Flux.gpu
+    σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
+    σ_min = 1f-3
+end
+
 
 function sample_natural_number(; init_mass)
     current_mass = init_mass
@@ -20,7 +86,7 @@ n_root_nodes = 1
 n_downstream_nodes = 1
 activation = Flux.relu
 """
-function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden, activation = Flux.relu)
+function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden=100, activation = Flux.relu)
     @info "random_nonlinear_dag_generator"
     dag = BayesNet()
     for i in 1:n_root_nodes
@@ -51,10 +117,13 @@ function Base.getindex(bn::BayesNet, node::Symbol)
     bn.cpds[bn.name_to_index[node]]
 end
 
+"""
+Also return data, noise, and ∇noise
+"""
 function draw_normal_perturbed_anomaly(dag; args)
     #-- normal data
     normal_df = rand(dag, args.n_samples)
-    sort(normal_df, :X1)
+    # sort(normal_df, :X1)
 
     #-- perturbed data, 3σ
     g = deepcopy(dag)
@@ -67,6 +136,7 @@ function draw_normal_perturbed_anomaly(dag; args)
 
     #-- select anomaly nodes
     g = deepcopy(dag)
+    n_anomaly_nodes = ceil(Int, 0.1args.anomaly_fraction)
     anomaly_nodes = sample(names(g), args.n_anomaly_nodes)
     for a = anomaly_nodes
         g[a].d = Uniform(3, 5)
@@ -79,7 +149,7 @@ end
 
 include("lib/plot-utils.jl")
 
-function plot_3data(train_df, perturbed_df, anomaly_df; xlim, ylim)
+function plot_3data(train_df, perturbed_df, anomaly_df; xlim, ylim, fig_path="fig/3data-2d.png")
     #-- defaults
     default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, color=:seaborn_deep, markersize=2, leg=nothing)
 
@@ -90,6 +160,6 @@ function plot_3data(train_df, perturbed_df, anomaly_df; xlim, ylim)
     pl_perturbed = scatter(x, y; xlab=L"x", ylab=L"y", title=L"perturbed data $(x, y)$")
     x, y = eachcol(anomaly_df)
     pl_anomaly = scatter(x, y; xlab=L"x", ylab=L"y", title=L"anomaly data $(x, y)$")
-    @> Plots.plot(pl_data, pl_perturbed, pl_anomaly; xlim, ylim, size=(1000, 800)) savefig("fig/3data-2d.png")
+    @> Plots.plot(pl_data, pl_perturbed, pl_anomaly; xlim, ylim, size=(1000, 800)) savefig(fig_path)
 end
 

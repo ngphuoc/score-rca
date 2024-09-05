@@ -1,89 +1,4 @@
-using Flux
-using Flux: crossentropy
-using Flux.Data: DataLoader
-using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
-using Plots
-using Plots
-using Flux
-using Dates
-using BSON, JSON
-using Printf
-import Base.show, Base.eltype
-using Flux
-import Flux._big_show, Flux._show_children
-using ProgressMeter
-using Printf
-using BSON
-using Random
-import NNlib: batched_mul
-using Optimisers
-using Optimisers: Optimisers, trainable
-
-include("./lib/utils.jl")
-include("./lib/nn.jl")
-include("./lib/nnlib.jl")
-include("./lib/graph.jl")
-include("./lib/diffusion.jl")
-include("./dlsm-losses.jl")
-include("datasets.jl")
-include("utilities.jl")
-include("models/embed.jl")
-include("models/ConditionalChain.jl")
-include("models/blocks.jl")
-include("models/attention.jl")
-include("models/batched_mul_4d.jl")
-include("models/UNetFixed.jl")
-include("models/UNet.jl")
-include("models/UNetConditioned.jl")
-
-args = @env begin
-    # Denoising
-    input_dim = 2
-    output_dim = 2
-    # hidden_dims = [50, 10]
-    hidden_dim = 32  # hiddensize factor
-    n_layers = 3
-    embed_dim = 50  # hiddensize factor
-    activation=swish
-    perturbed_scale = 1f0
-    fourier_scale=30.0f0
-    # scale=25.0f0  # RandomFourierFeatures scale
-    # σ_max=25f0
-    σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
-    σ_min = 1f-3
-    lr_regressor = 1e-3  # learning rate
-    lr_unet = 1e-4  # learning rate
-    decay = 1e-5  # weight decay parameter for AdamW
-    to_device = Flux.gpu
-    batchsize = 32
-    epochs = 100
-    save_path = ""
-    load_path = "data/exp2d-joint.bson"
-    # RCA
-    min_depth = 2  # minimum depth of ancestors for the target node
-    n_root_nodes = 1  # n_root_nodes
-    n_timesteps = 40
-    n_samples = 1000  # n observations
-    n_anomaly_nodes = 2
-    n_anomaly_samples = 100  # n faulty observations
-    has_node_outliers = true  # node outlier setting
-    n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
-    noise_scale = 1.0
-    seed = 1  #  random seed
-    #-- settings
-    n_batch = 10_000
-    d_hid = 16
-end
-
-@info "Data"
-
-X = normalize_neg_one_to_one(make_spiral(n_batch))
-X_val = normalize_neg_one_to_one(make_spiral(floor(Int, 0.1 * n_batch)))
-loader = Flux.DataLoader((X,) |> gpu; batchsize=32, shuffle=true);
-val_loader = Flux.DataLoader((X_val,) |> gpu; batchsize=32, shuffle=false);
-(x,) = @> loader first gpu
-d = size(x, 1)
-
+include("./data2d.jl")
 @info "Model"
 
 struct Diffusion2d{T}
@@ -146,32 +61,31 @@ for epoch = 1:args.epochs
 end
 
 @info "Plots"
-include("plot-joint.jl")
+using LaTeXStrings
+include("lib/plot-utils.jl")
 xlim = ylim = (-5, 5)
 
 #-- defaults
 default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, color=:seaborn_deep, markersize=2, leg=nothing)
 
 #-- plot data
-x, y = eachcol(normal_df)
+x, y = eachrow(X_val)
 pl_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Data $(x, y)$")
 
-#-- plot perturbations
-x, y = eachcol(perturbed_df)
-pl_perturbed_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"Perturbed $3\sigma$ $(x, y)$")
-
-x = @> normal_df Array transpose Array gpu;
+#-- plot perturbed data
+x = @> X_val gpu;
 d = size(x, 1)
 X, batchsize = size(x, 1), size(x)[end]
 t = rand!(similar(x, size(x)[end])) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
 σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
 z = 2rand!(similar(x)) .- 1;
 x̃ = x .+ σ_t .* z
-
 x, y = eachrow(cpu(x̃))
 pl_sm_data = scatter(x, y; xlab=L"x", ylab=L"y", title="Perturbed score matching")
 
 #-- plot gradients
+μx, σx = @> X_val mean(dims=2), std(dims=2)
+xlim = ylim = (-2, 2)
 x = @> Iterators.product(range(xlim..., length=20), range(ylim..., length=20)) collect vec;
 x = @> reinterpret(reshape, Float64, x) Array{Float32} gpu;
 d = size(x, 1)
@@ -184,5 +98,5 @@ u, v = eachrow(0.2J);
 pl_gradient = scatter(x, y, markersize=0, lw=0, color=:white);
 arrow0!.(x, y, u, v; as=0.2, lw=1.0);
 
-@> Plots.plot(pl_data, pl_perturbed_data, pl_sm_data, pl_gradient; xlim, ylim, size=(1000, 800)) savefig("fig/$datetime_prefix-2d.png")
+@> Plots.plot(pl_data, pl_sm_data, pl_gradient; xlim, ylim, size=(1000, 800)) savefig("fig/spiral-2d.png")
 

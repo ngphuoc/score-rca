@@ -14,14 +14,27 @@ RootCPD(target::NodeName, d::Distribution) = RootCPD(target, NodeName[], d)
 
 name(cpd::RootCPD) = cpd.target
 parents(cpd::RootCPD) = cpd.parents
-(cpd::RootCPD)(a::Assignment) = cpd.d # no update
-(cpd::RootCPD)() = (cpd)(Assignment()) # cpd()
-(cpd::RootCPD)(pair::Pair{NodeName}...) = (cpd)(Assignment(pair)) # cpd(:A=>1)
+nparams(cpd::RootCPD) = paramcount(params(cpd.d))
 
 function Distributions.fit(::Type{RootCPD}, data::DataFrame, target::NodeName)
     d = fit(D, data[!,target])
     RootCPD(target, d)
 end
 
-nparams(cpd::RootCPD) = paramcount(params(cpd.d))
+(cpd::RootCPD)(a::Assignment) = cpd.d # no update
+(cpd::RootCPD)() = (cpd)(Assignment()) # cpd()
+(cpd::RootCPD)(pair::Pair{NodeName}...) = (cpd)(Assignment(pair)) # cpd(:A=>1)
+
+function forward(cpd::RootCPD, a::Assignment, sampler)
+    noise = rand(cpd.d)
+    μ = zero(noise)
+    μ + noise, μ, noise
+end
+
+# (a, b, c)
+function forward!(cpd::RootCPD, a::Assignment, sampler)
+    noise = rand(cpd.d)
+    μ = zero(noise)
+    μ + noise, μ, noise
+end
 
