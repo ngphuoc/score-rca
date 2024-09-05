@@ -56,7 +56,7 @@ args = @env begin
     decay = 1e-5  # weight decay parameter for AdamW
     to_device = Flux.gpu
     batchsize = 32
-    epochs = 300
+    epochs = 100
     save_path = ""
     load_path = "data/exp2d-joint.bson"
     # RCA
