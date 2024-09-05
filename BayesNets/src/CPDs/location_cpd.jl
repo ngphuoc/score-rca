@@ -20,10 +20,10 @@ nparams(cpd::LocationCPD) = 2
 
 function (cpd::LocationCPD)(a::Assignment)
     x = getindex.([a], cpd.parents)
-    cpd.μ(x) + cpd.d
+    only(cpd.μ(x)) + cpd.d
 end
 
-function forward(cpd::LocationCPD, a::Assignment)
+function forward(cpd::LocationCPD, a::Assignment, sampler)
     x = getindex.([a], cpd.parents)
     μ = cpd.μ(x)
     noise = rand(cpd.d)
