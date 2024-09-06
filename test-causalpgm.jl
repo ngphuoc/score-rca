@@ -71,20 +71,48 @@ fs[1].weight[:, 1, 2] .= W1;  # fcm2 get X1 input
 fs[2].weight[:, :, 2] .= W2;  # fcm2 single output for mean
 model = CausalPGM(dag, ps, fs)
 
-εs = sample_noise(model, 10)
-forward(model, εs)
+ε = sample_noise(model, 10)
+bε = zero(ε)
+by = fill!(similar(ε, 1), 1)  # seed 1 like back(1)
+y = zero(by)
+forward(model, ε, y)
 
-function leaf(εs)
-    forward(model, εs)[2, :] |> sum
+ii = [getindex.([bn.name_to_index], parents(cpd)) for cpd in bn.cpds]
+
+function ϵ_func(ϵ)
+    X = zeros(size(ϵ, 1), 0)
+    for j = 1:d
+        cpd = bn.cpds[j]
+        x = X[:, ii[j]]  # use ii to avoid Zygote mutating error
+        w = ws[j]
+        y = x * w + ϵ[:, j]
+        X = hcat(X, y)
+    end
+    return scorer(X[:, end]) |> mean
 end
 
-leaf(εs)
+ϵ′, = Zygote.gradient(ϵ_func, ϵt)
+
+Enzyme.autodiff(Reverse, forward, Const(model), Duplicated(ε, bε), Duplicated(y, by));
+
+leaf(ε)
 
 using Enzyme
 
-Enzyme.gradient(Reverse, leaf, εs)
+Enzyme.gradient(Reverse, leaf, ε)
 
-dmodel = Enzyme.make_zero(model)
-train_enzyme!(loss, model, dmodel, data, optim);
+Enzyme.autodiff(Reverse, leaf, Duplicated(ε, bx), Duplicated(y, by));
 
+
+function f(x::Array{Float64}, y::Array{Float64})
+    y[1] = x[1] * x[1] + x[2] * x[1]
+    return nothing
+end;
+
+x  = [2.0, 2.0]
+bx = [0.0, 0.0]
+y  = [0.0]
+by = [1.0];
+
+Enzyme.autodiff(Reverse, f, Duplicated(x, bx), Duplicated(y, by));
 

@@ -23,6 +23,21 @@ autodiff(Forward, rosenbrock, BatchDuplicated, BatchDuplicated(1.0, (1.0, 0.0)),
 x = [1.0, 3.0]
 dx_1 = [1.0, 0.0]; dx_2 = [0.0, 1.0];
 autodiff(Forward, rosenbrock_inp, BatchDuplicated, BatchDuplicated(x, (dx_1, dx_2)))
+
 gradient(Reverse, rosenbrock_inp, [1.0, 2.0])
 
+
+using Enzyme
+
+function f(x::Array{Float64}, y::Array{Float64})
+    y[1] = x[1] * x[1] + x[2] * x[1]
+    return nothing
+end;
+
+x  = [2.0, 2.0]
+bx = [0.0, 0.0]
+y  = [0.0]
+by = [1.0];
+
+Enzyme.autodiff(Reverse, f, Duplicated(x, bx), Duplicated(y, by));
 

@@ -30,10 +30,10 @@ data = [(x, y)]
 # end
 
 
-@btime model(x);
+# @btime model(x);
 
 # 700 +- 600 μs
-@btime Flux.train!(loss, model, data, optim);
+# @btime Flux.train!(loss, model, data, optim);
 
 # 1.4 +- 900 μs
 dmodel = Enzyme.make_zero(model)

@@ -49,16 +49,15 @@ end
 """ Forward the noises throught the model following the dag topo-order
 TODO: more efficient implementation
 """
-function forward(model::CausalPGM, εs::AbstractMatrix{T}) where T
-    @assert is_weight_masked(model)
+function forward(model::CausalPGM, εs::AbstractMatrix{T}, ys::AbstractVector{T}) where T
+    # @assert is_weight_masked(model)
     @unpack dag, ps, fs = model
-    xs = deepcopy(εs)
-    foldl(1:size(xs, 1); init=xs) do xs, i
-        location = model(xs)
-        ys = location + εs
-        xs[i, :] .= ys[i, :]
-        return xs
+    d = size(dag, 1)
+    for i = 1:d
+        εs[i, :] .+= model(εs)[i, :]
     end
+    ys[1] = sum(εs[d, :])
+    return nothing
 end
 
 """ linear coef. of forward model at ε """
