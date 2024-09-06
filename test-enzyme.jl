@@ -37,5 +37,5 @@ data = [(x, y)]
 
 # 1.4 +- 900 μs
 dmodel = Enzyme.make_zero(model)
-@btime train_enzyme!(loss, model, dmodel, data, optim);
+train_enzyme!(loss, model, dmodel, data, optim);
 

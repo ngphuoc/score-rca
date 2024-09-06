@@ -64,6 +64,7 @@ end
 """ linear coef. of forward model at ε """
 function ∇ε(model::CausalPGM, εs::AbstractVecOrMat{<:Real})
     xs = forward(model, εs)
+    gradient(Reverse, rosenbrock_inp, [1.0, 2.0])
 
     ∇x(model, xs)
 end

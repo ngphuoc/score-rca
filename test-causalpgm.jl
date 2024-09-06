@@ -74,3 +74,17 @@ model = CausalPGM(dag, ps, fs)
 εs = sample_noise(model, 10)
 forward(model, εs)
 
+function leaf(εs)
+    forward(model, εs)[2, :] |> sum
+end
+
+leaf(εs)
+
+using Enzyme
+
+Enzyme.gradient(Reverse, leaf, εs)
+
+dmodel = Enzyme.make_zero(model)
+train_enzyme!(loss, model, dmodel, data, optim);
+
+
