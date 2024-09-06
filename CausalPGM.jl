@@ -1,3 +1,4 @@
+using CUDA: functional
 using Optimisers
 using Functors: @functor
 using Parameters: @unpack
@@ -66,5 +67,13 @@ function ∇ε(model::CausalPGM, εs::AbstractVecOrMat{<:Real})
     gradient(Reverse, rosenbrock_inp, [1.0, 2.0])
 
     ∇x(model, xs)
+end
+
+function test_enzyme()
+    ε = sample_noise(model, 10)
+    bε = zero(ε)
+    by = fill!(similar(ε, 1), 1)  # seed 1 like back(1)
+    y = zero(by)
+    forward(model, ε, y)
 end
 
