@@ -42,8 +42,8 @@ Generates a DataFrame containing a dataset of variable assignments.
 Always return a DataFrame with `nsamples` rows.
 """
 function forward(bn::BayesNet, nsamples::Integer)
-    sampler = DirectSampler()
-    xs, μs, εs = rand(bn, sampler), rand(bn, sampler), rand(bn, sampler)  # reuse mem
+    samp = DirectSampler()
+    xs, μs, εs = rand(bn, samp), rand(bn, samp), rand(bn, samp)  # reuse mem
     df = DataFrame()
     df_location = DataFrame()
     df_noise = DataFrame()
@@ -53,7 +53,7 @@ function forward(bn::BayesNet, nsamples::Integer)
         df_noise[!, name(cpd)] = Array{typeof(εs[name(cpd)])}(undef, nsamples)
     end
     for i in 1:nsamples
-        forward!((xs, μs, εs), bn, sampler)
+        forward!((xs, μs, εs), bn, samp)
         for cpd in bn.cpds
             n = name(cpd)
             df[i, n] = xs[n]
@@ -61,7 +61,7 @@ function forward(bn::BayesNet, nsamples::Integer)
             df_noise[i, n] = εs[n]
         end
     end
-    df
+    df, df_location, df_noise
 end
 
 #
@@ -73,9 +73,9 @@ The default sampler.
 """
 struct DirectSampler <: BayesNetSampler end
 
-function forward!((xs, μs, εs), bn::BayesNet, sampler)
+function forward!((xs, μs, εs), bn::BayesNet, samp)
     for cpd in bn.cpds
-        x, μ, ε = forward(cpd, xs, sampler)
+        x, μ, ε = forward(cpd, xs, samp)
         node = name(cpd)
         xs[node] = x
         μs[node] = μ
