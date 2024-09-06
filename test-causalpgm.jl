@@ -15,6 +15,7 @@ using Plots
 using Printf
 using ProgressMeter
 using Random
+using Enzyme
 
 include("lib/utils.jl")
 include("lib/diffusion.jl")
@@ -71,21 +72,29 @@ fs[1].weight[:, 1, 2] .= W1;  # fcm2 get X1 input
 fs[2].weight[:, :, 2] .= W2;  # fcm2 single output for mean
 model = CausalPGM(dag, ps, fs)
 
-ii = [getindex.([bn.name_to_index], parents(cpd)) for cpd in bn.cpds]
+ii = eachcol(dag)
+ii = eachcol(dag)
+d = size(dag, 1)
+ms = unpack(model)
+j = 1
+m = ms[j]
+ε = sample_noise(model, 10)
 
-function ϵ_func(ϵ)
-    X = zeros(size(ϵ, 1), 0)
+function ε_func(ε)
+    X = fill!(similar(ε), 0)
     for j = 1:d
+        m = ms[j]
+        m
         cpd = bn.cpds[j]
         x = X[:, ii[j]]  # use ii to avoid Zygote mutating error
         w = ws[j]
-        y = x * w + ϵ[:, j]
+        y = x * w + ε[:, j]
         X = hcat(X, y)
     end
     return scorer(X[:, end]) |> mean
 end
 
-ϵ′, = Zygote.gradient(ϵ_func, ϵt)
+ε′, = Zygote.gradient(ε_func, εt)
 
 Enzyme.autodiff(Reverse, forward, Const(model), Duplicated(ε, bε), Duplicated(y, by));
 

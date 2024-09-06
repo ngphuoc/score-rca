@@ -75,5 +75,23 @@ function test_enzyme()
     by = fill!(similar(ε, 1), 1)  # seed 1 like back(1)
     y = zero(by)
     forward(model, ε, y)
+
+    function ε_func_enzyme(model::CausalPGM, ε::AbstractArray{T}, y::AbstractArray{T}) where T
+        @unpack dag, ps, fs = model
+        d = size(dag, 1)
+        for j = 1:d
+            ε[[j], :] += fs[j](ε)
+        end
+        y[1] = sum(ε[end, :])
+        nothing
+    end
+
+    ε = sample_noise(model, 10)
+    bε = zero(ε)
+    y = fill!(similar(ε, 1), 0)
+    by = fill!(similar(y), 1)
+
+    Enzyme.autodiff(Reverse, ε_func_enzyme, Const(model), Duplicated(ε, bε), Duplicated(y, by));
+
 end
 
