@@ -1,4 +1,5 @@
 include("./data-rca.jl")
+include("./bayesnets-extra.jl")
 using BayesNets: forward
 
 function BayesNets.forward(cpd::RootCPD, a::Assignment, sampler)

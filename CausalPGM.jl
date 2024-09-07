@@ -7,7 +7,7 @@ include("lib/utils.jl")
 struct CausalPGM{D,P,F}
     dag::D  # upper triangular
     ps::P  # noise distributions
-    fs::F  # mapping to the means, batched
+    fs::F  # mapping to the means
 end
 
 @functor CausalPGM
