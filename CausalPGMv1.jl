@@ -4,18 +4,18 @@ using Functors: @functor
 using Parameters: @unpack
 include("lib/utils.jl")
 
-struct CausalPGM{D,P,F}
+struct CausalPGMv1{D,P,F}
     dag::D  # upper triangular
     ps::P  # noise distributions
     fs::F  # mapping to the means, batched
 end
 
-@functor CausalPGM
-@showfields CausalPGM
-Optimisers.trainable(model::CausalPGM) = (; model.fs)
+@functor CausalPGMv1
+@showfields CausalPGMv1
+Optimisers.trainable(model::CausalPGMv1) = (; model.fs)
 
-# function CausalPGM(; args)
-#     CausalPGM(dag, ps, fs)
+# function CausalPGMv1(; args)
+#     CausalPGMv1(dag, ps, fs)
 # end
 
 """ For @assertion in forward mode to check if weights have been masked or not"""
@@ -27,7 +27,7 @@ end
 -> apply this after each parameter update
 -> need an @assertion in forward mode to check if weights have been masked or not
 """
-function mask_weight!(model::CausalPGM)
+function mask_weight!(model::CausalPGMv1)
     @unpack dag, ps, fs = model
     xs = zero(εs)
     for i = 1:size(dag, 1)  # loop fcm i
@@ -35,13 +35,13 @@ function mask_weight!(model::CausalPGM)
     end
 end
 
-""" Sample zero mean noises from CausalPGM.ps """
-function sample_noise(model::CausalPGM, n_samples::Int)
+""" Sample zero mean noises from CausalPGMv1.ps """
+function sample_noise(model::CausalPGMv1, n_samples::Int)
     @> rand.(model.ps, n_samples) transpose.() vcats
 end
 
 """ One-step mapping throught the model, return the location """
-function (model::CausalPGM)(x::AbstractVecOrMat{<:Real})
+function (model::CausalPGMv1)(x::AbstractVecOrMat{<:Real})
     @unpack dag, ps, fs = model
     xb = @> unsqueeze(x, 2) repeat(outer=(1, size(dag, 1)))
     yb = @> fs(xb) squeeze(1)
@@ -50,7 +50,7 @@ end
 """ Forward the noises throught the model following the dag topo-order
 TODO: more efficient implementation
 """
-function forward(model::CausalPGM, εs::AbstractMatrix{T}, ys::AbstractVector{T}) where T
+function forward(model::CausalPGMv1, εs::AbstractMatrix{T}, ys::AbstractVector{T}) where T
     # @assert is_weight_masked(model)
     @unpack dag, ps, fs = model
     d = size(dag, 1)
@@ -62,7 +62,7 @@ function forward(model::CausalPGM, εs::AbstractMatrix{T}, ys::AbstractVector{T}
 end
 
 """ linear coef. of forward model at ε """
-function ∇ε(model::CausalPGM, εs::AbstractVecOrMat{<:Real})
+function ∇ε(model::CausalPGMv1, εs::AbstractVecOrMat{<:Real})
     xs = forward(model, εs)
     gradient(Reverse, rosenbrock_inp, [1.0, 2.0])
 
@@ -76,7 +76,7 @@ function test_enzyme()
     y = zero(by)
     forward(model, ε, y)
 
-    function ε_func_enzyme(model::CausalPGM, ε::AbstractArray{T}, y::AbstractArray{T}) where T
+    function ε_func_enzyme(model::CausalPGMv1, ε::AbstractArray{T}, y::AbstractArray{T}) where T
         @unpack dag, ps, fs = model
         d = size(dag, 1)
         for j = 1:d

@@ -72,50 +72,28 @@ fs[1].weight[:, 1, 2] .= W1;  # fcm2 get X1 input
 fs[2].weight[:, :, 2] .= W2;  # fcm2 single output for mean
 model = CausalPGM(dag, ps, fs)
 
-ii = eachcol(dag)
-ii = eachcol(dag)
+ii = @> eachcol(dag) findall.()
 d = size(dag, 1)
-ms = unpack(model)
+fs = unpack(model.fs)
 j = 1
-m = ms[j]
+f = fs[j]
 ε = sample_noise(model, 10)
 
 function ε_func(ε)
-    X = fill!(similar(ε), 0)
+    X = fill!(similar(ε, 0, size(ε, 2)), 0)
     for j = 1:d
-        m = ms[j]
-        m
-        cpd = bn.cpds[j]
-        x = X[:, ii[j]]  # use ii to avoid Zygote mutating error
+        f = fs[j]
+        x = X[ii[j], :]  # use ii to avoid Zygote mutating error
+        X[[], :]
         w = ws[j]
         y = x * w + ε[:, j]
-        X = hcat(X, y)
+        X = vcat(X, y)
     end
     return scorer(X[:, end]) |> mean
 end
 
+a = rand(3)
+a[Bool[0,0,1]]
+
 ε′, = Zygote.gradient(ε_func, εt)
-
-Enzyme.autodiff(Reverse, forward, Const(model), Duplicated(ε, bε), Duplicated(y, by));
-
-leaf(ε)
-
-using Enzyme
-
-Enzyme.gradient(Reverse, leaf, ε)
-
-Enzyme.autodiff(Reverse, leaf, Duplicated(ε, bx), Duplicated(y, by));
-
-
-function f(x::Array{Float64}, y::Array{Float64})
-    y[1] = x[1] * x[1] + x[2] * x[1]
-    return nothing
-end;
-
-x  = [2.0, 2.0]
-bx = [0.0, 0.0]
-y  = [0.0]
-by = [1.0];
-
-Enzyme.autodiff(Reverse, f, Duplicated(x, bx), Duplicated(y, by));
 
