@@ -1,19 +1,11 @@
-using Revise
 import Base.show, Base.eltype
 import Flux._big_show, Flux._show_children
 import NNlib: batched_mul
-using BSON, JSON
-using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
-using Dates
-using Flux
+using Revise
+using BSON, JSON, DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2, Dates, Flux, Optimisers, Plots, Printf, ProgressMeter, Random, Distances
 using Flux.Data: DataLoader
 using Flux: crossentropy
-using Optimisers
 using Optimisers: Optimisers, trainable
-using Plots
-using Printf
-using ProgressMeter
-using Random
 
 include("./imports.jl")
 include("./lib/diffusion.jl")
@@ -64,7 +56,6 @@ args = @env begin
     σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
     σ_min = 1f-3
 end
-
 
 function sample_natural_number(; init_mass)
     current_mass = init_mass
@@ -120,46 +111,34 @@ end
 """
 Also return data, noise, and ∇noise
 """
-function draw_normal_perturbed_anomaly(dag; args)
+function draw_normal_perturbed_anomaly(g; args)
+    d = length(g.cpds)
     #-- normal data
-    normal_df = rand(dag, args.n_samples)
-    # sort(normal_df, :X1)
+    ε = sample_noise(g, args.n_samples)
+    x = forward(g, ε)
 
     #-- perturbed data, 3σ
-    g = deepcopy(dag)
-    for cpd = g.cpds
+    g′ = deepcopy(g)
+    for cpd = g′.cpds
         if isempty(parents(cpd))  # perturb root nodes
             cpd.d = Normal(cpd.d.μ, args.perturbed_scale * cpd.d.σ)
         end
     end
-    perturbed_df = rand(g, args.n_samples)
+    ε′ = sample_noise(g, args.n_samples)
+    x′ = forward(g′, ε′)
 
     #-- select anomaly nodes
-    g = deepcopy(dag)
+    ga = deepcopy(g)
     n_anomaly_nodes = ceil(Int, 0.1args.anomaly_fraction)
-    anomaly_nodes = sample(names(g), args.n_anomaly_nodes)
-    for a = anomaly_nodes
-        g[a].d = Uniform(3, 5)
+    anomaly_nodes = sample(1:d, n_anomaly_nodes)
+    a = anomaly_nodes |> first
+    for a in anomaly_nodes
+        ga.cpds[a].d = Uniform(3, 5)
     end
     #-- anomaly data
-    anomaly_df = rand(g, args.n_anomaly_samples)
+    εa = sample_noise(g, args.n_samples)
+    xa = forward(ga, εa)
 
-    return normal_df, perturbed_df, anomaly_df  # drawn_noise_samples
-end
-
-include("lib/plot-utils.jl")
-
-function plot_3data(train_df, perturbed_df, anomaly_df; xlim, ylim, fig_path="fig/3data-2d.png")
-    #-- defaults
-    default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, color=:seaborn_deep, markersize=2, leg=nothing)
-
-    #-- plot data
-    x, y = eachcol(train_df)
-    pl_data = scatter(x, y; xlab=L"x", ylab=L"y", title=L"data $(x, y)$")
-    x, y = eachcol(perturbed_df)
-    pl_perturbed = scatter(x, y; xlab=L"x", ylab=L"y", title=L"perturbed data $(x, y)$")
-    x, y = eachcol(anomaly_df)
-    pl_anomaly = scatter(x, y; xlab=L"x", ylab=L"y", title=L"anomaly data $(x, y)$")
-    @> Plots.plot(pl_data, pl_perturbed, pl_anomaly; xlim, ylim, size=(1000, 800)) savefig(fig_path)
+    return ε, x, ε′, x′, εa, xa
 end
 

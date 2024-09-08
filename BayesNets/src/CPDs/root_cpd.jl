@@ -25,9 +25,3 @@ end
 (cpd::RootCPD)() = (cpd)(Assignment()) # cpd()
 (cpd::RootCPD)(pair::Pair{NodeName}...) = (cpd)(Assignment(pair)) # cpd(:A=>1)
 
-function forward(cpd::RootCPD, a::Assignment, sampler)
-    noise = rand(cpd.d, sampler)
-    μ = zero(noise)
-    μ + noise, μ, noise
-end
-

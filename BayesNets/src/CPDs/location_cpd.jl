@@ -23,10 +23,12 @@ function (cpd::LocationCPD)(a::Assignment)
     only(cpd.μ(x)) + cpd.d
 end
 
-function forward(cpd::LocationCPD, a::Assignment, sampler)
+function forward(cpd::LocationCPD, x::AbstractArray{T}) where T
+     cpd.μ(x)
+end
+
+function forward(cpd::LocationCPD, a::Assignment)
     x = getindex.([a], cpd.parents)
-    μ = cpd.μ(x)
-    noise = rand(cpd.d)
-    μ + noise, μ, noise
+    forward(cpd, x)
 end
 

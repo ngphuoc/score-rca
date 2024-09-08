@@ -15,20 +15,49 @@ function sample_noise(bn::BayesNet, n_samples::Int)
     @> sample_noise.(bn.cpds, n_samples) transpose.() vcats
 end
 
+function forward(cpd::MlpCPD, x::AbstractArray{T}) where T
+    μ = cpd.mlp(x)
+end
+
+function forward(cpd::LocationCPD, x::AbstractArray{T}) where T
+    μ = cpd.μ(x)
+end
+
 """ Forward the noises throught the bn following the dag topo-order
 TODO: more efficient implementation
 """
-function forwardv2(bn::BayesNet, ε::AbstractMatrix{T}) where T
+function forward(bn::BayesNet, ε::AbstractMatrix{T}) where T
+    ii = @> bn.dag adjacency_matrix Matrix{Bool} eachcol findall.()
+    forward(bn, ε, ii)
+end
+
+function forward(bn::BayesNet, ε::AbstractMatrix{T}, ii::Vector{Vector{Int64}}) where T
     d = length(bn.cpds)
-    X = fill!(similar(ε, 0, size(ε, 2)), 0)
+    batchsize = size(ε, 2)
+    X = zero(similar(ε, 0, batchsize))
     for j = 1:d
-        # ε[i, :] .+= bn(ε)[i, :]
-        y = zero(ε)
+        y = zero(similar(ε, 1, batchsize))
         x = X[ii[j], :]
         if length(x) > 0
-            y += bn.cpds[j](x)
+            y += forward(bn.cpds[j], x)
         end
-        y += ε[j, :]
+        y += ε[[j], :]
+        X = vcat(X, y)
+    end
+    X
+end
+
+function forwardv2(bn::BayesNet, ε::AbstractMatrix{T}, ii) where T
+    d = length(bn.cpds)
+    batchsize = size(ε, 2)
+    X = zero(similar(ε, 0, batchsize))
+    for j = 1:d
+        y = zero(similar(ε, 1, batchsize))
+        x = X[ii[j], :]
+        if length(x) > 0
+            y += forward(bn.cpds[j], x)
+        end
+        y += ε[[j], :]
         X = vcat(X, y)
     end
     X[end, :]
