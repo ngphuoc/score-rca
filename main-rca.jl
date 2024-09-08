@@ -6,21 +6,15 @@ n_nodes = round(Int, min_depth^2 / 3 + 1)
 n_root_nodes = 1
 n_downstream_nodes = n_nodes - n_root_nodes
 scale, hidden = 0.5, 100
-dag = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden)
+g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden)
 
-normal_df, perturbed_df, anomaly_df = draw_normal_perturbed_anomaly(dag; args)
+ε, x, ε′, x′, εa, xa = draw_normal_perturbed_anomaly(g; args)
 
 #-- normalise data
-X = @> vcat(normal_df, perturbed_df) Array transpose Array;
+X = @> hcat(x, x′);
 μX, σX = @> X mean(dims=2), std(dims=2);
-normal_df = @. (normal_df - μX') / σX'
-perturbed_df = @. (perturbed_df - μX') / σX'
-anomaly_df = @. (anomaly_df - μX') / σX'
-
-@> normal_df Array minimum(dims=1), maximum(dims=1)
-@> perturbed_df Array minimum(dims=1), maximum(dims=1)
-
-args
+normalise(x) = @. (x - μX) / σX
+@≥ ε, x, ε′, x′, εa, xa normalise.();
 
 # include("./attribution.jl")
 function get_ref(x, r)
@@ -36,7 +30,7 @@ function get_score(dnet, x)
     J = @> dnet(x, t)
 end
 
-r = get_ref(x, Array(normal_df)')
+r = get_ref(xa, x)
 
 @≥ x Array gpu;
 @≥ r Array gpu;
