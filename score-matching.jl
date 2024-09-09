@@ -3,7 +3,7 @@ struct DSM{T}
     model::T
 end
 @functor DSM
-# @showfields DSM
+@showfields DSM
 Optimisers.trainable(dnet::DSM) = (; dnet.model)
 
 function DSM(n_groups; args)
@@ -33,19 +33,14 @@ function dsm_loss(dnet, x::AbstractMatrix{<:Real}; ϵ=1.0f-5, σ_max)
     return sum(abs2, score .* σ_t + z) / batchsize
 end
 
-function train_dsm(; ϵ = 1.0f-5)
-    dnet = @> DSM(inputdim; args) gpu
-    # dnet = train_dsm(dnet, normal_df; args)
-    df = vcat(normal_df, perturbed_df)
-    X = @> df Array;
-    loader = DataLoader((X',); args.batchsize, shuffle=true)
+function train_dsm(dnet, X; args, ε=args.ε)
+    loader = DataLoader((X,); args.batchsize, shuffle=true)
     (x,) = @> loader first gpu
     d = size(x, 1)
     batchsize = size(x)[end]
-    t = rand!(similar(x, batchsize)) .* (1f0 - ϵ) .+ ϵ  # same t for j and paj
+    t = rand!(similar(x, batchsize)) .* (1f0 - ε) .+ ε  # same t for j and paj
     dnet(x, t)
     dsm_loss(dnet, x; args.σ_max)
-
     # eval_unet(dnet, df)
     opt = Flux.setup(Optimisers.Adam(args.lr), dnet);
     progress = Progress(args.epochs, desc="Fitting dnet")
@@ -61,12 +56,10 @@ function train_dsm(; ϵ = 1.0f-5)
         end
         next!(progress; showvalues=[(:loss, total_loss/length(loader))])
     end
-
+    return dnet
     # @≥ X, dnet cpu.();
     # BSON.@save "data/main-rca.bson" args X dnet
     # BSON.@load "data/main-rca.bson" args X dnet
     # @≥ X, dnet gpu.();
 end
-
-
 

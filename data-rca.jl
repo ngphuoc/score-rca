@@ -30,7 +30,7 @@ args = @env begin
     batchsize = 100
     d_hid = 16
     decay = 1e-5  # weight decay parameter for AdamW
-    epochs = 10
+    epochs = 2
     fourier_scale=30.0f0
     has_node_outliers = true  # node outlier setting
     hidden_dim = 300  # hiddensize factor
@@ -55,6 +55,7 @@ args = @env begin
     to_device = Flux.gpu
     σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
     σ_min = 1f-3
+    ε = 1f-5
 end
 
 function sample_natural_number(; init_mass)
@@ -111,7 +112,7 @@ end
 """
 Also return data, noise, and ∇noise
 """
-function draw_normal_perturbed_anomaly(g; args)
+function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     d = length(g.cpds)
     #-- normal data
     ε = sample_noise(g, args.n_samples)
@@ -129,16 +130,15 @@ function draw_normal_perturbed_anomaly(g; args)
 
     #-- select anomaly nodes
     ga = deepcopy(g)
-    n_anomaly_nodes = ceil(Int, 0.1args.anomaly_fraction)
     anomaly_nodes = sample(1:d, n_anomaly_nodes)
     a = anomaly_nodes |> first
     for a in anomaly_nodes
         ga.cpds[a].d = Uniform(3, 5)
     end
     #-- anomaly data
-    εa = sample_noise(g, args.n_samples)
+    εa = sample_noise(g, args.n_anomaly_samples)
     xa = forward(ga, εa)
 
-    return ε, x, ε′, x′, εa, xa
+    return ε, x, ε′, x′, εa, xa, n_anomaly_nodes
 end
 
