@@ -77,5 +77,11 @@ end
 xr = get_ref(xa, x);
 εr
 gt_value = @> get_ε_rankings(εa, ∇εa) hcats
-ndcg_score(gt_value', ((εa .- ε0) .* ξ_value)', k=n_anomaly_nodes)
+
+μa = forward_1step_mean(g, xa, ii)
+ε̂a = xa - μa
+μr = forward_1step_mean(g, xr, ii)
+ε̂r = xr - μr
+
+ndcg_score(gt_value', ((ε̂a - ε̂r) .* ξ_value)', k=n_anomaly_nodes)
 
