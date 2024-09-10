@@ -82,6 +82,8 @@ gt_value = @> get_ε_rankings(εa, ∇εa) hcats
 ε̂a = xa - μa
 μr = forward_1step_mean(g, xr, ii)
 ε̂r = xr - μr
-
-ndcg_score(gt_value', ((ε̂a - ε̂r) .* ξ_value)', k=n_anomaly_nodes)
+∇xa = @> get_score(dnet, gpu(xa)) cpu
+anomaly_measure = abs.(∇xa)
+dr = get_score(dnet, r)
+ndcg_score(gt_value', abs.((ε̂a - ε̂r) .* ∇xa)', k=n_anomaly_nodes)
 
