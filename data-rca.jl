@@ -73,7 +73,7 @@ function sample_natural_number(; init_mass)
     end
 end
 
-"""
+""" target_node is the last node
 n_root_nodes = 1
 n_downstream_nodes = 1
 activation = Flux.relu
@@ -140,5 +140,15 @@ function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     xa = forward(ga, εa)
 
     return ε, x, ε′, x′, εa, xa, n_anomaly_nodes
+end
+
+"""
+scale, hidden = 0.5, 100
+"""
+function get_data(min_depth, n_nodes=round(Int, min_depth^2 / 3 + 1), n_root_nodes=rand(1, n_nodes÷5+1); scale=0.5, hidden=100)
+    n_downstream_nodes = n_nodes - n_root_nodes
+    g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden)
+    n_anomaly_nodes = ceil(Int, n_nodes * args.anomaly_fraction)
+    ε, x, ε′, x′, εa, xa = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
 end
 

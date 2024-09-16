@@ -1,6 +1,10 @@
+using Flux
 include("./data-rca.jl")
+include("./lib/utils.jl")
 include("./score-matching.jl")
 include("./plot-dsm.jl")
+
+get_data(args)
 
 n_nodes = round(Int, min_depth^2 / 3 + 1)
 n_root_nodes = 1
@@ -18,16 +22,16 @@ normalise(x) = @. (x - μX) / σX
 
 # include("./attribution.jl")
 function get_ref(x, r)
-    dist_xr = pairwise(Euclidean(), x, r)
+    dist_xr = pairwise(Euclidean(), x, r)  # correct
     _, j = @> findmin(dist_xr, dims=2)
     @≥ j getindex.(2) vec
-    n = r[:, j]
+    r[:, j]
 end
 
 function get_score(dnet, x)
     t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
-    σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
-    J = @> dnet(x, t)
+    # σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
+    @> dnet(x, t)
 end
 
 r = x
@@ -60,9 +64,10 @@ function get_ε_rankings(εa, ∇εa)
     @assert size(εa, 1) == d
     i = 1
     scores = Vector{Float64}[]  # 1 score vector for each outlier
-    for i = 1:size(εa, 2)
+    batchsize = size(εa, 2)
+    for i = 1:batchsize
         tmp = Dict(j => ∇εa[j, i] * εa[j, i] for j = 1:d)
-        ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]
+        ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]  # used
         score = zeros(d)
         for q in 1:max_k
             iq = findfirst(==(ranking[q]), 1:d)
