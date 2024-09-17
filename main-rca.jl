@@ -1,18 +1,11 @@
+using Revise
 using Flux
 include("./data-rca.jl")
 include("./lib/utils.jl")
 include("./score-matching.jl")
 include("./plot-dsm.jl")
 
-get_data(args)
-
-n_nodes = round(Int, min_depth^2 / 3 + 1)
-n_root_nodes = 1
-n_downstream_nodes = n_nodes - n_root_nodes
-scale, hidden = 0.5, 100
-g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden)
-n_anomaly_nodes = ceil(Int, n_nodes * args.anomaly_fraction)
-ε, x, ε′, x′, εa, xa = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+g, ε, x, ε′, x′, εa, xa = get_data(; args)
 
 #-- normalise data
 X = @> hcat(x, x′);

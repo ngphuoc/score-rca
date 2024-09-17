@@ -12,9 +12,6 @@ using ProgressMeter: Progress, next!
 using CUDA
 using Flux
 using Flux: gpu, Chain, Dense, relu, DataLoader
-using ParameterSchedulers
-using ParameterSchedulers: Scheduler, Stateful, next!
-using Optimisers: Descent, adjust!
 
 include("bayesnets-extra.jl")
 include("group-mlp.jl")
@@ -87,13 +84,11 @@ function train_regressor(regressor, df; args)
     @info "Train regressor, weighted loss by variance"
     eval_regressor(regressor, df)
     opt = Flux.setup(Optimisers.Adam(args.lr_regressor), regressor);
-    # scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_regressor, decay = 0.5))
     progress = Progress(args.epochs, desc="Fitting regressor")
 
     # for epoch = 1:args.epochs
     for epoch = 1:1
         total_loss = 0.0
-        # epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
         for (x,) = loader
             batchsize = size(x)[end]
             @≥ x gpu;
@@ -120,12 +115,10 @@ function train_unet(unet, df; args)
     @info "Train unet"
     eval_unet(unet, df)
     opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
-    # scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_unet, decay = 0.5))
     progress = Progress(args.epochs÷5, desc="Fitting unet")
     for epoch = 1:args.epochs
         total_loss = 0.0
         # learning rate 10 schedules
-        # epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
         for (x,) = loader
             @≥ x gpu
             loss, (grad,) = Flux.withgradient(unet, ) do unet
@@ -153,12 +146,10 @@ function train_group_unet(regressor, unet, df; args)
     @info "Train unet"
     eval_unet(regressor, unet, df)
     opt = Flux.setup(Optimisers.Adam(args.lr_unet), unet);
-    scheduler = ParameterSchedulers.Stateful(Exp(start = args.lr_unet, decay = 0.5))
     progress = Progress(args.epochs÷5, desc="Fitting unet")
     for epoch = 1:args.epochs÷5
         total_loss = 0.0
         # learning rate 10 schedules
-        epoch % args.epochs ÷ 10 == 0 && adjust!(opt, ParameterSchedulers.next!(scheduler))
         for (x,) = loader
             @≥ x gpu unsqueeze(2) repeat(1, d, 1)
             loss, (grad,) = Flux.withgradient(unet, ) do unet

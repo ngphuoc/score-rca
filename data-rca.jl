@@ -1,3 +1,5 @@
+using MultivariateStats, Distributions, StatsPlots, Plots, LaTeXStrings, Plots.PlotMeasures
+using Plots: plot
 import Base.show, Base.eltype
 import Flux._big_show, Flux._show_children
 import NNlib: batched_mul
@@ -26,7 +28,7 @@ include("models/UNetFixed.jl")
 include("models/UNetConditioned.jl")
 
 args = @env begin
-    activation=swish
+    activation=Flux.relu
     batchsize = 100
     d_hid = 16
     decay = 1e-5  # weight decay parameter for AdamW
@@ -35,25 +37,28 @@ args = @env begin
     has_node_outliers = true  # node outlier setting
     hidden_dim = 300  # hiddensize factor
     hidden_dims = [300, 300]
-    input_dim = 2
     save_path = ""
     load_path = "data/main-2d.bson"
     lr = 1e-3  # learning rate
-    min_depth = 2  # minimum depth of ancestors for the target node
+    min_depth = 3  # minimum depth of ancestors for the target node
     anomaly_fraction = 0.1
     n_anomaly_samples = 100  # n faulty observations
-    n_batch = 10_000
+    n_batch = 1000
     n_layers = 3
     n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
+    # graph
+    noise_scale = 0.5  # n_root_nodes
+    hidden = 100  # n_root_nodes
+    n_nodes = 5
     n_root_nodes = 1  # n_root_nodes
-    n_samples = 100000  # n observations
+    n_anomaly_nodes = 2
+    n_samples = 500  # n observations
     n_timesteps = 100
-    noise_scale = 1.0
     output_dim = 2
     perturbed_scale = 1f0
     seed = 1  #  random seed
     to_device = Flux.gpu
-    σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
+    nσ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
     σ_min = 1f-3
     ε = 1f-5
 end
@@ -78,11 +83,11 @@ n_root_nodes = 1
 n_downstream_nodes = 1
 activation = Flux.relu
 """
-function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden=100, activation = Flux.relu)
+function random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scale, hidden, dist, activation)
     @info "random_nonlinear_dag_generator"
     dag = BayesNet()
     for i in 1:n_root_nodes
-        cpd = RootCPD(Symbol("X$i"), Normal(0, 1))
+        cpd = RootCPD(Symbol("X$i"), dist(0, 1))
         push!(dag, cpd)
     end
     for i in 1:n_downstream_nodes
@@ -99,7 +104,7 @@ function random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale,
                    ) |> f64
         mlp[1].weight .= W1
         mlp[2].weight .= W2
-        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, Normal(0.0, Float64(noise_scale)))
+        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, dist(0.0, Float64(noise_scale)))
         push!(dag, cpd)
     end
     return dag
@@ -122,7 +127,7 @@ function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     g′ = deepcopy(g)
     for cpd = g′.cpds
         if isempty(parents(cpd))  # perturb root nodes
-            cpd.d = Normal(cpd.d.μ, args.perturbed_scale * cpd.d.σ)
+            cpd.d = typeof(cpd.d)(cpd.d.μ, args.perturbed_scale * scale(cpd.d))
         end
     end
     ε′ = sample_noise(g, args.n_samples)
@@ -139,16 +144,139 @@ function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     εa = sample_noise(g, args.n_anomaly_samples)
     xa = forward(ga, εa)
 
-    return ε, x, ε′, x′, εa, xa, n_anomaly_nodes
+    return ε, x, ε′, x′, εa, xa
 end
 
 """
 scale, hidden = 0.5, 100
+n_nodes=round(Int, min_depth^2 / 3 + 1)
+n_root_nodes=rand(1, n_nodes÷5+1)
+scale=0.5
+hidden=100
 """
-function get_data(min_depth, n_nodes=round(Int, min_depth^2 / 3 + 1), n_root_nodes=rand(1, n_nodes÷5+1); scale=0.5, hidden=100)
+function get_data(; args)
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden, activation = args
     n_downstream_nodes = n_nodes - n_root_nodes
-    g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, scale, hidden)
-    n_anomaly_nodes = ceil(Int, n_nodes * args.anomaly_fraction)
-    ε, x, ε′, x′, εa, xa = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+    g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden, activation)
+    g, draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
 end
 
+function plot1(j, g, x; μx, σx)
+    cpd = g.cpds[j]
+    paj = @> g.dag adjacency_matrix Matrix{Bool} getindex(:, j)
+    x_paj = x[paj, :]
+    x_j = x[[j], :]
+    μ_j = μx[[j], :]
+    σ_j = σx[[j], :]
+    x_dim = size(x_paj, 1)
+    @show j x_dim
+    if x_dim == 1
+        plot2d(cpd, x_paj, x_j, μ_j, σ_j)
+    elseif x_dim == 2
+        plot3d(cpd, x_paj, x_j, μ_j, σ_j)
+    else
+        plot(title="more than 2d")
+    end
+end
+
+function plot2d(cpd, x_paj, x_j, μ_j, σ_j)
+    ys = forward_scaled(cpd, x_paj, μ_j, σ_j)
+    y = forward(cpd, x_paj)
+    #-- defaults
+    xlim = ylim = zlim = (-3, 3)
+    # default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, zlim, color=:seaborn_deep, markersize=2, leg=nothing)
+    default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markersize=2, markerstrokewidth=0)
+    # , leg=nothing, color=:seaborn_deep,
+    #-- plot data
+    x1, = eachrow(x_paj);
+    x3 = zero(x1);
+    pl_data = scatter(x1, x3; lab="input", xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
+    scatter!(pl_data, x1, vec(x_j); lab="output")
+    scatter!(pl_data, x1, vec(ys); lab="forward_scaled")
+    scatter!(pl_data, x1, vec(y); lab="forward")
+    pl_data
+end
+
+function plot3d(cpd, x_paj, x_j, μ_j, σ_j)
+    ys = forward_scaled(cpd, x_paj, μ_j, σ_j)
+    y = forward(cpd, x_paj)
+    #-- defaults
+    xlim = ylim = zlim = (-3, 3)
+    # default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, zlim, color=:seaborn_deep, markersize=2, leg=nothing)
+    default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markersize=2, markerstrokewidth=0)
+    # , leg=nothing, color=:seaborn_deep,
+    #-- plot data
+    x1, x2 = eachrow(x_paj);
+    x3 = zero(x1);
+    pl_data = scatter(x1, x2, x3; lab="input", xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
+    scatter!(pl_data, x1, x2, vec(x_j); lab="output")
+    scatter!(pl_data, x1, x2, vec(ys); lab="forward_scaled")
+    scatter!(pl_data, x1, x2, vec(y); lab="forward")
+    pl_data
+end
+
+function plot2d_pca(cpd, x_paj, x_j, μ_j, σ_j)
+    x_paj
+    pca = fit(PCA, x_paj; maxoutdim=2)
+    x_pca = predict(pca, x_paj)
+    size(x_pca, 1) == 1 && @≥ x_pca repeat(outer=(2, 1))
+    μ_j, σ_j =
+    ys = forward_scaled(cpd, x_paj, μ_j, σ_j)
+    y = forward(cpd, x_paj)
+    #-- defaults
+    xlim = ylim = zlim = (-3, 3)
+    # default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, zlim, color=:seaborn_deep, markersize=2, leg=nothing)
+    default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markerstrokewidth=0)
+    # , leg=nothing, color=:seaborn_deep,
+    #-- plot data
+    x1, x2 = eachrow(x_pca);
+    x3 = zero(x1);
+    pl_data = scatter(x1, x2, x3; lab="input", xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
+    scatter!(x1, x2, vec(x_j); lab="output")
+    scatter!(x1, x2, vec(ys); lab="forward_scaled")
+    scatter!(x1, x2, vec(y); lab="forward")
+    pl_data
+
+end
+
+""" Plot independent noise dists, outliers, and 2d-PCA-FCM
+"""
+function plot_data(g, ε, x, ε′, x′, εa, xa, μx, σx)
+    d = @> g.dag adjacency_matrix size(1)
+    @> Plots.plot(plot1.(2:d, [g], [x]; μx, σx)..., size=(1000, 800)) savefig("fig/fcms.png")
+end
+
+""" Generate and save data
+5 normals, 5 laplaces
+"""
+function generate_data(; args)
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden, activation = args
+    n_downstream_nodes = n_nodes - n_root_nodes
+    dist = Normal
+    # for dist in [Normal, Laplace]
+    #     for _ = 1:5
+            g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scale, hidden, dist, activation)
+            ε, x, ε′, x′, εa, xa = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+
+            #-- normalise data
+            X = @> hcat(x, x′);
+            μx, σx = @> X mean(dims=2), std(dims=2);
+            normalise(x) = @. (x - μx) / σx
+            @≥ ε, x, ε′, x′, εa, xa, X normalise.();
+
+            plot_data(g, ε, x, ε′, x′, εa, xa, μx, σx)
+            # BSON.@save args.save_path args g ε x ε′ x′ εa xa
+        # end
+    # end
+end
+
+""" Load data from saved
+"""
+function load_data(; args)
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden = args
+    n_downstream_nodes = n_nodes - n_root_nodes
+    g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden)
+    g, draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+end
+
+generate_data(; args)

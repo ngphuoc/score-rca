@@ -2,7 +2,7 @@
 
 julia_version = "1.10.5"
 manifest_format = "2.0"
-project_hash = "378860aa81d32f519589d411c15676de652e7bcb"
+project_hash = "8e2930a7c55d7443e3f05fb5f30ec7a7ab95ff36"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "99a6f5d0ce1c7c6afdb759daa30226f71c54f6b0"
@@ -1166,25 +1166,6 @@ git-tree-sha1 = "012e604e1c7458645cb8b436f8fba789a51b257f"
 uuid = "9b13fd28-a010-5f03-acff-a1bbcff69959"
 version = "1.0.0"
 
-[[deps.InfiniteArrays]]
-deps = ["ArrayLayouts", "FillArrays", "Infinities", "LazyArrays", "LinearAlgebra"]
-git-tree-sha1 = "478ad747fd8e0ac2506a19770e9597289e6027ad"
-uuid = "4858937d-0d70-526a-a4dd-2d5cb5dd786c"
-version = "0.14.3"
-
-    [deps.InfiniteArrays.extensions]
-    InfiniteArraysDSPExt = "DSP"
-    InfiniteArraysStatisticsExt = "Statistics"
-
-    [deps.InfiniteArrays.weakdeps]
-    DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
-    Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-
-[[deps.Infinities]]
-git-tree-sha1 = "6336676b91409ec0a2c82723de9bdf4cabd02d78"
-uuid = "e1ba4f0e-776d-440f-acd9-e1d2e9742647"
-version = "0.1.8"
-
 [[deps.Inflate]]
 git-tree-sha1 = "d1b1b796e47d94588b3757fe84fbf65a5ec4a80d"
 uuid = "d25df0c9-e2be-5dd7-82c8-3ad0b3e990b9"
@@ -1989,12 +1970,6 @@ deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jl
 git-tree-sha1 = "e127b609fb9ecba6f201ba7ab753d5a605d53801"
 uuid = "36c8627f-9965-5494-a995-c6b170f724f3"
 version = "1.54.1+0"
-
-[[deps.ParameterSchedulers]]
-deps = ["InfiniteArrays", "Optimisers"]
-git-tree-sha1 = "99a2b9f799bae36f9571421883cdeeabfe25ad8c"
-uuid = "d7d3b36b-41b8-4d0d-a2bf-768c6151755e"
-version = "0.4.2"
 
 [[deps.Parameters]]
 deps = ["OrderedCollections", "UnPack"]
