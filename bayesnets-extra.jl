@@ -15,10 +15,10 @@ function sample_noise(bn::BayesNet, n_samples::Int)
     @> sample_noise.(bn.cpds, n_samples) transpose.() vcats
 end
 
-function forward_scaled(cpd, x, μx, σx)
+function forward_scaled(cpd, x, μx, σx, μy, σy)
     x0 = @. x * σx + μx
-    x̂ = forward(cpd, x0)
-    @. (x̂ - μx) / σx
+    y = forward(cpd, x0)
+    @. (y - μy) / σy
 end
 
 function forward(cpd::RootCPD, x::AbstractArray{T}) where T
