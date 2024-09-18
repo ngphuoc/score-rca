@@ -8,6 +8,9 @@ using BSON, JSON, DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD
 using Flux.Data: DataLoader
 using Flux: crossentropy
 using Optimisers: Optimisers, trainable
+using ColorSchemes
+color_pallete = Plots.palette(:Paired_10)
+colors = color_pallete.colors
 
 # include("./imports.jl")
 include("./lib/utils.jl")
@@ -19,7 +22,7 @@ include("./lib/nn.jl")
 include("./lib/nnlib.jl")
 include("./lib/utils.jl")
 include("./mlp-unet-2d.jl")
-include("./random-graph-datasets.jl")
+# include("./random-graph-datasets.jl")
 include("./rca.jl")
 include("utilities.jl")
 include("models/embed.jl")
@@ -31,6 +34,14 @@ include("models/UNetFixed.jl")
 include("models/UNetConditioned.jl")
 
 args = @env begin
+    # graph
+    noise_scale = 0.5  # n_root_nodes
+    hidden = 10  # n_root_nodes
+    min_depth = 5  # minimum depth of ancestors for the target node
+    n_nodes = 10
+    n_root_nodes = 1  # n_root_nodes
+    n_anomaly_nodes = 2
+    n_samples = 500  # n observations
     activation=Flux.relu
     batchsize = 100
     d_hid = 16
@@ -48,14 +59,6 @@ args = @env begin
     n_batch = 1000
     n_layers = 3
     n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
-    # graph
-    noise_scale = 0.5  # n_root_nodes
-    hidden = 100  # n_root_nodes
-    min_depth = 2  # minimum depth of ancestors for the target node
-    n_nodes = 2
-    n_root_nodes = 1  # n_root_nodes
-    n_anomaly_nodes = 1
-    n_samples = 500  # n observations
     n_timesteps = 100
     output_dim = 2
     perturbed_scale = 1f0
@@ -167,102 +170,8 @@ function get_data(; args)
     g, draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
 end
 
-function plot1(j, g, x; μx, σx)
-    cpd = g.cpds[j]
-    paj = @> g.dag adjacency_matrix Matrix{Bool} getindex(:, j)
-    x_paj = x[paj, :]
-    x_j = x[[j], :]
-    μ_j = μx[[j], :]
-    σ_j = σx[[j], :]
-    x_dim = size(x_paj, 1)
-    @show j x_dim
-    if x_dim == 1
-        plot2d(cpd, x_paj, x_j, μ_j, σ_j, j)
-    elseif x_dim == 2
-        plot3d(cpd, x_paj, x_j, μ_j, σ_j, j)
-    else
-        plot(title="more than 2d")
-    end
-end
-
-function plot2d(cpd, x_paj, x_j, μ_j, σ_j, j)
-    ys = forward_scaled(cpd, x_paj, μ_j, σ_j)
-    y = forward(cpd, x_paj)
-    #-- defaults
-    xlim = ylim = zlim = (-3, 3)
-    # default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, zlim, color=:seaborn_deep, markersize=2, leg=nothing)
-    default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markersize=2, markerstrokewidth=0)
-    # , leg=nothing, color=:seaborn_deep,
-    #-- plot data
-    x1, = eachrow(x_paj);
-    x3 = zero(x1);
-    pl_data = scatter(x1, x3; lab="input", xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
-    scatter!(pl_data, x1, vec(x_j); lab="output")
-    scatter!(pl_data, x1, vec(ys); lab="forward_scaled")
-    scatter!(pl_data, x1, vec(y); lab="forward")
-    pl_data
-end
-
-function plot3d(cpd, x_paj, x_j, μ_j, σ_j, j)
-    ys = forward_scaled(cpd, x_paj, μ_j, σ_j)
-    y = forward(cpd, x_paj)
-    #-- defaults
-    xlim = ylim = zlim = (-3, 3)
-    # default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, zlim, color=:seaborn_deep, markersize=2, leg=nothing)
-    default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markersize=2, markerstrokewidth=0)
-    # , leg=nothing, color=:seaborn_deep,
-    #-- plot data
-    x1, x2 = eachrow(x_paj);
-    x3 = zero(x1);
-    pl_data = scatter(x1, x2, x3; lab="input", xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
-    scatter!(pl_data, x1, x2, vec(x_j); lab="output")
-    scatter!(pl_data, x1, x2, vec(ys); lab="forward_scaled")
-    scatter!(pl_data, x1, x2, vec(y); lab="forward")
-    pl_data
-end
-
-""" Plot independent noise dists, outliers, and 2d-PCA-FCM
-"""
-function plot_data_debug(g, ε, x, ε′, x′, εa, xa, μx, σx, xμ, xμ′)
-
-end
-
-function plot_data(g, ε, x, ε′, x′, εa, xa, μx, σx, xμ, xμ′)
-    d = @> g.dag adjacency_matrix size(1)
-    @> Plots.plot(plot1.(2:d, [g], [x]; μx, σx)..., size=(1000, 800)) savefig("fig/fcms.png")
-end
-
-""" Generate and save data
-5 normals, 5 laplaces
-"""
-function generate_data(; args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden, activation = args
-    n_downstream_nodes = n_nodes - n_root_nodes
-    dist = Normal
-    # for dist in [Normal, Laplace]
-    #     for _ = 1:5
-            # g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scale, hidden, dist, activation)
-            # ε, x, ε′, x′, εa, xa, xμ, xμ′, xμa = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
-            # BSON.@save "data/data2d.bson" args g ε x ε′ x′ εa xa xμ xμ′ xμa
-            BSON.@load "data/data2d.bson" args g ε x ε′ x′ εa xa xμ xμ′ xμa
-
-            #-- normalise data
-            # X = @> hcat(x, x′);
-            X = x;
-            μx, σx = @> X mean(dims=2), std(dims=2);
-            normalise_x(x) = @. (x - μx) / σx
-            scale_ε(ε) = @. ε / σx
-            @≥ X, x, x′, xa, xμ, xμ′, xμa normalise_x.();
-            @≥ ε, ε′, εa scale_ε.();
-            @assert x ≈ xμ + ε
-            @assert x′ ≈ xμ′ + ε′
-            @assert xa ≈ xμa + εa
-            # plot_data(g, ε, x, ε′, x′, εa, xa, μx, σx, xμ, xμ′)
-
-    d = @> g.dag adjacency_matrix size(1)
-    # @> Plots.plot(plot1.(2:d, [g], [x]; μx, σx)..., size=(1000, 800)) savefig("fig/fcms.png")
-    # plot1(j, g, x; μx, σx)
-    j = 2
+function plot1(j; g, x, xμ, ε, μx, σx)
+    @show j
     cpd = g.cpds[j]
     paj = @> g.dag adjacency_matrix Matrix{Bool} getindex(:, j)
     x_paj = x[paj, :]
@@ -276,7 +185,16 @@ function generate_data(; args)
     σ_paj = σx[paj, :]
     x_dim = size(x_paj, 1)
     @show j x_dim
+    if x_dim == 1
+        plot2d(cpd, x_paj, μ_paj, σ_paj, xμ_j, x_j, μ_j, σ_j, j)
+    elseif x_dim == 2
+        plot3d(cpd, x_paj, μ_paj, σ_paj, xμ_j, x_j, μ_j, σ_j, j)
+    else
+        plot(title="more than 2d")
+    end
+end
 
+function plot2d(cpd, x_paj, μ_paj, σ_paj, xμ_j, x_j, μ_j, σ_j, j)
     ys = forward_scaled(cpd, x_paj, μ_paj, σ_paj, μ_j, σ_j)
     y = forward(cpd, x_paj)
     #-- defaults
@@ -287,18 +205,83 @@ function generate_data(; args)
     #-- plot data
     x1, = eachrow(x_paj);
     x3 = zero(x1);
-
-    @≥ x_j, ε_j, xμ_j, ys, y vec.()
-    df = DataFrame((; x_j, ε_j, xμ_j, ys, y))
-    sort!(df, :x_j)
-
-    pl_data = scatter(x1, x3; lab="input", xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
-    scatter!(pl_data, x1, vec(x_j); lab="output")
-    scatter!(pl_data, x1, vec(xμ_j); lab="output mean")
-    scatter!(pl_data, x1, vec(ys); lab="forward_scaled")
-    scatter!(pl_data, x1, vec(y); lab="forward")
+    @≥ x_j, ys, y vec.()
+    pl_data = scatter(x1, x3; lab="input", c=colors[1], xlab=L"dim_1", ylab=L"dim_2", zlab=L"output", title="FCM $j")
+    scatter!(pl_data, x1, vec(x_j); lab="output", c=colors[2])
+    scatter!(pl_data, x1, vec(xμ_j); lab="output mean", c=colors[3])
+    scatter!(pl_data, x1, vec(ys); lab="forward_scaled", c=colors[4])
+    scatter!(pl_data, x1, vec(y); lab="forward", c=colors[5])
     pl_data
-    @> Plots.plot(pl_data, size=(800, 600)) savefig("fig/fcm2d.png")
+end
+
+function plot3d(cpd, x_paj, μ_paj, σ_paj, xμ_j, x_j, μ_j, σ_j, j)
+    ys = forward_scaled(cpd, x_paj, μ_paj, σ_paj, μ_j, σ_j)
+    y = forward(cpd, x_paj)
+    #-- defaults
+    xlim = ylim = zlim = (-3, 3)
+    # default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, zlim, color=:seaborn_deep, markersize=2, leg=nothing)
+    default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markersize=2, markerstrokewidth=0)
+    # , leg=nothing, color=:seaborn_deep,
+    #-- plot data
+    x1, x2 = eachrow(x_paj);
+    x3 = zero(x1);
+    pl_data = scatter(x1, x2, x3; lab="input", c=colors[1], xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
+    scatter!(pl_data, x1, x2, vec(x_j); lab="output", c=colors[2])
+    scatter!(pl_data, x1, x2, vec(xμ_j); lab="output mean", c=colors[3])
+    scatter!(pl_data, x1, x2, vec(ys); lab="forward_scaled", c=colors[4])
+    scatter!(pl_data, x1, x2, vec(y); lab="forward", c=colors[5])
+    pl_data
+end
+
+""" Plot independent noise dists, outliers, and 2d-PCA-FCM
+"""
+function plot_data_debug(g, ε, x, ε′, x′, εa, xa, μx, σx, xμ, xμ′)
+
+end
+
+function plot_data(g, ε, x, ε′, x′, εa, xa, μx, σx, xμ, xμ′)
+    d = @> g.dag adjacency_matrix size(1)
+    @> Plots.plot(plot1.(2:d; g, x, xμ, ε, μx, σx)..., size=(1000, 800)) savefig("fig/fcms.png")
+end
+
+""" Generate and save data
+5 normals, 5 laplaces
+"""
+function generate_data(; args)
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden, activation = args
+    n_downstream_nodes = n_nodes - n_root_nodes
+    dist = Normal
+    # for dist in [Normal, Laplace]
+    #     for _ = 1:5
+            g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scale, hidden, dist, activation)
+            ε, x, ε′, x′, εa, xa, xμ, xμ′, xμa = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+
+            #-- normalise data
+            # X = @> hcat(x, x′);
+            X = x;
+            μx, σx = @> X mean(dims=2), std(dims=2);
+            normalise_x(x) = @. (x - μx) / σx
+            scale_ε(ε) = @. ε / σx
+            @≥ X, x, x′, xa, xμ, xμ′, xμa normalise_x.();
+            @≥ ε, ε′, εa scale_ε.();
+            @assert x ≈ xμ + ε
+            @assert x′ ≈ xμ′ + ε′
+            @assert xa ≈ xμa + εa
+
+            plot_data(g, ε, x, ε′, x′, εa, xa, μx, σx, xμ, xμ′)
+            gui()
+
+#     @≥ x_j, ε_j, xμ_j, ys, y vec.()
+#     df = DataFrame((; x_j, ε_j, xμ_j, ys, y))
+#     sort!(df, :x_j)
+
+#     pl_data = scatter(x1, x3; lab="input", xlab=L"pc_1", ylab=L"pc_2", zlab=L"output", title="FCM $j")
+#     scatter!(pl_data, x1, vec(x_j); lab="output")
+#     scatter!(pl_data, x1, vec(xμ_j); lab="output mean")
+#     scatter!(pl_data, x1, vec(ys); lab="forward_scaled")
+#     scatter!(pl_data, x1, vec(y); lab="forward")
+#     pl_data
+    # @> Plots.plot(pl_data, size=(800, 600)) savefig("fig/fcm2d.png")
 
         # end
     # end

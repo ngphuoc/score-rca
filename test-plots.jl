@@ -1,7 +1,9 @@
-using Plots
-using LinearAlgebra, ForwardDiff
+
+using Plots, LinearAlgebra, ForwardDiff
 import PyPlot
 import Contour: contours, levels, level, lines, coordinates
+using ColorSchemes
+color_pallete = Plots.palette(:Paired_10)
 
 # We will make use of some helper functions that will simplify plotting. These will be described in more detail in the following:
 
@@ -84,8 +86,9 @@ ts = range(0, 4pi, length=5)
 for t in ts
    arrow!(r(t), r'(t))
 end
+gui()
 
-note("""Adding many arrows this way would be inefficient.""")
+# note("""Adding many arrows this way would be inefficient.""")
 
 # Setting a viewing angle for 3D plots
 
@@ -106,6 +109,7 @@ surface(xs, ys, zs)
 # Remembering if the ys or xs go first in the above can be hard. Alternatively, broadcasting can be used. The command f.(xs,ys) would return a vector, as the xs and ys match in shape–they are both column vectors. But the transpose of xs looks like a row vector and ys looks like a column vector, so broadcasting will create a matrix of values, as desired here:
 
 surface(xs, ys, f.(xs', ys))
+gui()
 
 # This graph shows the tessalation algorithm. Here only the grid in the x -y plane is just one cell:
 
@@ -157,11 +161,12 @@ contourf(xs, ys, zs)
 # Combining surface plots and contour plots
 # In PyPlot it is possible to add a contour lines to the surface, or projected onto an axis. Here is an example:
 
+# Error
 import PyPlot
 xs = ys = range(-2, stop=2, length=100)
 f(x,y) = 2 + x^2 + y^2
 zs = [f(x,y) for y in ys, x in xs]
-PyPlot.plot_surface(xs, ys, zs)
+PyPlot.plot_surface(collect(xs), collect(ys), zs)
 PyPlot.contour3D(xs, ys, zs)
 ax = PyPlot.gca()
 ax.contour(xs, ys, zs, offset=0)
@@ -201,13 +206,13 @@ p = [-1, 1] # in the region graphed, [-2,2] × [-2, 2]
 f(x) = f(x...)
 v = ForwardDiff.gradient(f, p)
 
-
 # add 0 to p and v (two styles)
 push!(p, -15)
 scatter!(xs_ys([p])..., markersize=3)
 
 v = vcat(v, 0)
 arrow!(p, v)
+gui()
 
 # The tangent plane
 
@@ -231,6 +236,7 @@ arrow!(p1, 5n)
 
 a, b = randn(2)
 dot(n, (p1-[a,b,tl(a,b)]))
+gui()
 
 # Parameterized surface plots
 
@@ -245,22 +251,19 @@ X(r,theta,phi) = r * sin(theta) * sin(phi)
 Y(r,theta,phi) = r * sin(theta) * cos(phi)
 Z(r,theta,phi) = r * cos(theta)
 
-We can parameterize the sphere by plotting values for x
-, y, and z produced by a sequence of values for θ and ϕ, holding r=1
-
-:
+# We can parameterize the sphere by plotting values for x , y, and z produced by a sequence of values for θ and ϕ, holding r=1 :
 
 pyplot()
 thetas = range(0, stop=pi,   length=50)
 phis   = range(0, stop=pi/2, length=50)
 
-xs = [X(1, theta, phi) for theta in thetas, phi in phis] 
+xs = [X(1, theta, phi) for theta in thetas, phi in phis]
 ys = [Y(1, theta, phi) for theta in thetas, phi in phis]
 zs = [Z(1, theta, phi) for theta in thetas, phi in phis]
 
 surface(xs, ys, zs)
 
-note("The above may not work with all backends for `Plots`, even if those that support 3D graphics.")
+# note("The above may not work with all backends for `Plots`, even if those that support 3D graphics.")
 
 Plotting F(x,y, z) = c
 
@@ -353,3 +356,4 @@ m = maximum(norm.(vs))
 vs = 4/10/m * vs
 
 quiver(xs_ys(ps)..., quiver=xs_ys(vs))
+

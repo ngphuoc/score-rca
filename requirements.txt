@@ -5,3 +5,4 @@ pybaseball
 scipy
 seaborn
 scikit-learn
+matplotlib

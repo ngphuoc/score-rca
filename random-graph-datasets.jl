@@ -9,7 +9,7 @@ include("lib/graph.jl")
 include("lib/outlier.jl")
 include("rca.jl")
 include("bayesnets-extra.jl")
-@py import pandas as pd
+# @py import pandas as pd
 
 function get_ground_truth_dag(min_depth, n_nodes; scale=0.1, hidden=2)
     is_sufficiently_deep_graph = false
