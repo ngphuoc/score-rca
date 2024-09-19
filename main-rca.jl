@@ -2,24 +2,30 @@ using Revise
 using Flux
 include("./data-rca.jl")
 include("./lib/utils.jl")
-include("./score-matching.jl")
+include("./denoising-score-matching.jl")
 include("./plot-dsm.jl")
 
-g, ε, x, ε′, x′, εa, xa = get_data(; args)
+const to_device = args.to_device
 
-#-- normalise data
-X = @> hcat(x, x′);
-μX, σX = @> X mean(dims=2), std(dims=2);
-normalise(x) = @. (x - μX) / σX
-@≥ ε, x, ε′, x′, εa, xa, X normalise.();
+g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
 
-# include("./attribution.jl")
-function get_ref(x, r)
-    dist_xr = pairwise(Euclidean(), x, r)  # correct
-    _, j = @> findmin(dist_xr, dims=2)
-    @≥ j getindex.(2) vec
-    r[:, j]
-end
+#-- 1. collapse data
+
+@assert x ≈ y + ε
+z = x - y
+@≥ z vec transpose;
+@≥ z, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx to_device.()
+
+#-- 2. train score function on data with mean removed
+
+H, fourier_scale = args.hidden_dim, args.fourier_scale
+net = ConditionalChain(
+                 Parallel(.+, Dense(1, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+                 Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+                 Dense(H, 1),
+                )
+dnet = @> DSM(args.σ_max, net) to_device
+dnet = train_dsm(dnet, z; args)
 
 function get_score(dnet, x)
     t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
@@ -27,32 +33,33 @@ function get_score(dnet, x)
     @> dnet(x, t)
 end
 
-r = x
-# r = get_ref(xa, x)
-# pairwise(Euclidean(), xa, r)
+get_scores(dnet, x) = @> get_score.([dnet], transpose.(eachrow(x))) vcats
 
-@≥ x, r gpu.();
-inputdim = size(x, 1)
-dnet = @> DSM(inputdim; args) gpu
-dnet = train_dsm(dnet, x; args)
+dz = get_score(dnet, z)
+dx = get_scores(dnet, x)
 
-dx = get_score(dnet, x)
-dr = get_score(dnet, r)
-# anomaly_measure = norm2(dx) .* norm2(r - x)
-# norm2(dr)
-anomaly_measure = abs.(dx)
+#-- 3. reference points and outlier scores
 
-max_k = n_anomaly_nodes
+function get_ref(x, r)
+    dist_xr = pairwise(Euclidean(), x, r)  # correct
+    _, j = @> findmin(dist_xr, dims=2)
+    @≥ j getindex.(2) vec
+    r[:, j]
+end
+
+r = get_ref(xa, x)
+dx = get_scores(dnet, x)
+dr = get_scores(dnet, r)
+
+vx = abs.(dx)  # anomaly_measure
+
+#-- 4. ground truth ranking and results
+
+max_k = args.n_anomaly_nodes
 overall_max_k = max_k + 1
-
-g
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 d = size(adjmat, 1)
 ii = @> adjmat eachcol findall.()
-∇εa, = Zygote.gradient(εa, ) do εa
-    @> forward_leaf(g, εa, ii) sum
-end
-
 function get_ε_rankings(εa, ∇εa)
     @assert size(εa, 1) == d
     i = 1
@@ -71,17 +78,34 @@ function get_ε_rankings(εa, ∇εa)
     return scores
 end
 
-@≥ x, xa cpu.();
-xr = get_ref(xa, x);
-εr
+# TODO: recheck gt ranking scores
+∇εa, = Zygote.gradient(εa, ) do εa
+    @> forward_leaf(g, εa, ii) sum
+end
 gt_value = @> get_ε_rankings(εa, ∇εa) hcats
+@> gt_value mean(dims=2)
+anomaly_nodes
 
-μa = forward_1step_mean(g, xa, ii)
+μa = forward_1step_scaled(g, xa, μx, σx)
 ε̂a = xa - μa
-μr = forward_1step_mean(g, xr, ii)
+xr = get_ref(xa, x);  # reference points
+μr = forward_1step_scaled(g, xr, μx, σx)
 ε̂r = xr - μr
-∇xa = @> get_score(dnet, gpu(xa)) cpu
+
+@≥ ε̂a, ε̂r to_device
+∇xa = @> get_scores(dnet, ε̂a)
 anomaly_measure = abs.(∇xa)
-dr = get_score(dnet, r)
-ndcg_score(gt_value', abs.((ε̂a - ε̂r) .* ∇xa)', k=n_anomaly_nodes)
+
+using PythonCall
+@unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
+
+anomaly_nodes
+
+ndcg_score(gt_value', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
+
+gt_manual = repeat([2, 0, 0, 1f0], outer=(1, size(xa, 2)))
+ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
+
+#-- 5. baselines
+
 

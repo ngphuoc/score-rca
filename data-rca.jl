@@ -34,7 +34,7 @@ include("models/UNetFixed.jl")
 include("models/UNetConditioned.jl")
 
 args = @env begin
-    # graph
+    #-- graph
     data_id = 1  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     noise_dist = Normal  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     noise_scale = 1.0  # n_root_nodes
@@ -47,28 +47,24 @@ args = @env begin
     anomaly_fraction = 0.1
     n_anomaly_samples = 20  # n faulty observations
     activation=Flux.relu
-    batchsize = 100
-    d_hid = 16
-    decay = 1e-5  # weight decay parameter for AdamW
-    epochs = 2
-    fourier_scale=30.0f0
     has_node_outliers = true  # node outlier setting
-    hidden_dim = 300  # hiddensize factor
-    hidden_dims = [300, 300]
-    save_path = ""
-    load_path = "data/main-2d.bson"
+    #-- dsm
+    fourier_scale=10.0f0
+    σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
+    σ_min = 1f-3
+    hidden_dim = 10  # hiddensize factor
+    save_path = "data/main-2d.bson"
+    load_path = ""
+    #-- training
+    batchsize = 50
     lr = 1e-3  # learning rate
-    n_batch = 100
-    n_layers = 3
     n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
     n_timesteps = 100
-    output_dim = 2
     perturbed_scale = 1f0
+    decay = 1e-5  # weight decay parameter for AdamW
+    epochs = 2
     seed = 1  #  random seed
-    to_device = Flux.gpu
-    nσ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
-    σ_min = 1f-3
-    ε = 1f-5
+    to_device = Flux.cpu ∘ f32
 end
 
 function sample_natural_number(; init_mass)
@@ -278,9 +274,9 @@ end
 
 """ Load data from saved, "/data/noise_dist-data_id.bson"
 y: output mean: x ≈ y + ε
-return normal, perturb, and outlier data
+return g, normal, perturb, and outlier data
 """
-function load_data(args)
+function load_normalised_data(args)
     @info "Loading data " * data_path(args)
     BSON.@load data_path(args) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
     @> x mean, std
@@ -300,7 +296,7 @@ function load_data(args)
     d = @> g.dag adjacency_matrix size(1)
     x1 = x[1, :]
     xa1 = xa[1, :]
-    return x, x′, xa, y, y′, ya, ε, ε′, εa
+    return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
 end
 
 # generate_data(args)

@@ -1,0 +1,11 @@
+#-- from main-rca.jl
+function get_score(dnet, x)
+    sz = size(x)
+    @≥ x vec transpose
+    t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+    # σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
+    @> dnet(x, t) reshape(sz)
+end
+
+dx = @> get_score.([dnet], transpose.(eachrow(x))) vcats
+

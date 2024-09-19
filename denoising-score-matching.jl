@@ -1,3 +1,5 @@
+using Flux
+
 struct DSM{T}
     σ_max::Float32
     model::T
@@ -6,17 +8,18 @@ end
 @showfields DSM
 Optimisers.trainable(dnet::DSM) = (; dnet.model)
 
-function DSM(input_dim; args)
-    X = F = n_groups = input_dim
-    H, fourier_scale = args.hidden_dim, args.fourier_scale
-    model = ConditionalChain(
-                             Parallel(.+, Dense(X, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-                             Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-                             Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-                             Dense(H, X),
-                            )
-    return DSM(args.σ_max, model)
-end
+# to pass model net from outside
+# function DSM(input_dim; args)
+#     X = F = n_groups = input_dim
+#     H, fourier_scale = args.hidden_dim, args.fourier_scale
+#     model = ConditionalChain(
+#                              Parallel(.+, Dense(X, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+#                              Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+#                              Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+#                              Dense(H, X),
+#                             )
+#     return DSM(args.σ_max, model)
+# end
 
 function (dnet::DSM)(x::AbstractMatrix{T}, t) where {T}
     h = dnet.model(x, t)
@@ -34,9 +37,9 @@ function dsm_loss(dnet, x::AbstractMatrix{<:Real}; ϵ=1.0f-5, σ_max)
     return sum(abs2, score .* σ_t + z) / batchsize
 end
 
-function train_dsm(dnet, X; args, ε=args.ε)
+function train_dsm(dnet, X; args, ε=1f-5)
     loader = DataLoader((X,); args.batchsize, shuffle=true)
-    (x,) = @> loader first gpu
+    (x,) = @> loader first to_device
     d = size(x, 1)
     batchsize = size(x)[end]
     t = rand!(similar(x, batchsize)) .* (1f0 - ε) .+ ε  # same t for j and paj
@@ -48,7 +51,7 @@ function train_dsm(dnet, X; args, ε=args.ε)
     for epoch = 1:args.epochs
         total_loss = 0.0
         for (x,) = loader
-            @≥ x gpu
+            @≥ x to_device
             global loss, (grad,) = Flux.withgradient(dnet, ) do dnet
                 dsm_loss(dnet, x; args.σ_max)
             end
@@ -61,6 +64,6 @@ function train_dsm(dnet, X; args, ε=args.ε)
     # @≥ X, dnet cpu.();
     # BSON.@save "data/main-rca.bson" args X dnet
     # BSON.@load "data/main-rca.bson" args X dnet
-    # @≥ X, dnet gpu.();
+    # @≥ X, dnet to_device.();
 end
 

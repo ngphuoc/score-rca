@@ -16,6 +16,25 @@ function sample_noise(bn::BayesNet, n_samples::Int)
     @> sample_noise.(bn.cpds, n_samples) transpose.() vcats
 end
 
+function forward_1step_mean(bn::BayesNet, x::AbstractMatrix{T}, ii) where T
+    @> forward.(bn.cpds, getindex.([x], ii, :)) vcats
+end
+
+"""
+"""
+function forward_1step_scaled(g::BayesNet, x::AbstractMatrix{T}, μx, σx) where T
+    d = @> g.dag adjacency_matrix size(1)
+    @> forward_1step_scaled.(1:d; g, x, μx, σx) vcats
+end
+
+function forward_1step_scaled(j::Int; g, x, μx, σx)
+    cpd = g.cpds[j]
+    paj = @> g.dag adjacency_matrix Matrix{Bool} getindex(:, j)
+    parent_child(x) = x[paj, :], x[[j], :]
+    xs, μs, σs = @> x, μx, σx parent_child.()
+    y = forward_scaled(cpd, xs, μs, σs)
+end
+
 """ using input pairs to simplify args
 """
 function forward_scaled(cpd, xs, μs, σs)
@@ -80,9 +99,5 @@ function forward_leaf(bn::BayesNet, ε::AbstractMatrix{T}, ii) where T
         X = vcat(X, y)
     end
     X[end, :]
-end
-
-function forward_1step_mean(bn::BayesNet, x::AbstractMatrix{T}, ii) where T
-    @> forward.(bn.cpds, getindex.([x], ii, :)) vcats
 end
 
