@@ -9,14 +9,15 @@ const to_device = args.to_device
 
 g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
 
-#-- 1. collapse data
+@info "#-- 1. collapse data"
+
 
 @assert x ≈ y + ε
 z = x - y
 @≥ z vec transpose;
 @≥ z, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx to_device.()
 
-#-- 2. train score function on data with mean removed
+@info "#-- 2. train score function on data with mean removed"
 
 H, fourier_scale = args.hidden_dim, args.fourier_scale
 net = ConditionalChain(
@@ -38,7 +39,8 @@ get_scores(dnet, x) = @> get_score.([dnet], transpose.(eachrow(x))) vcats
 dz = get_score(dnet, z)
 dx = get_scores(dnet, x)
 
-#-- 3. reference points and outlier scores
+@info "#-- 3. reference points and outlier scores"
+
 
 function get_ref(x, r)
     dist_xr = pairwise(Euclidean(), x, r)  # correct
@@ -53,7 +55,7 @@ dr = get_scores(dnet, r)
 
 vx = abs.(dx)  # anomaly_measure
 
-#-- 4. ground truth ranking and results
+@info "#-- 4. ground truth ranking and results"
 
 max_k = args.n_anomaly_nodes
 overall_max_k = max_k + 1
@@ -99,12 +101,11 @@ anomaly_measure = abs.(∇xa)
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
-
 gt_manual = indexin(1:args.n_nodes, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
 
-#-- 5. save results
+@info "#-- 5. save results"
 
 df = DataFrame(
                n_nodes = Int[],

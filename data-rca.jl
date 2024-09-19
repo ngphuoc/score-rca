@@ -36,16 +36,15 @@ include("models/UNetConditioned.jl")
 args = @env begin
     #-- graph
     data_id = 1  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
-    noise_dist = Normal  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
-    noise_scale = 1.0  # n_root_nodes
+    noise_dist = "Normal"  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     hidden = 10  # n_root_nodes
     min_depth = 3  # minimum depth of ancestors for the target node
     n_nodes = 4
     n_root_nodes = 1  # n_root_nodes
     n_anomaly_nodes = 2
-    n_samples = 200  # n observations
+    n_samples = 500  # n observations
     anomaly_fraction = 0.1
-    n_anomaly_samples = 20  # n faulty observations
+    n_anomaly_samples = 50  # n faulty observations
     activation=Flux.relu
     has_node_outliers = true  # node outlier setting
     #-- dsm
@@ -131,7 +130,8 @@ function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     g′ = deepcopy(g)
     for cpd = g′.cpds
         if isempty(parents(cpd))  # perturb root nodes
-            cpd.d = typeof(cpd.d)(cpd.d.μ, args.perturbed_scale * scale(cpd.d))
+            μ, σ = Distributions.params(cpd.d)
+            cpd.d = typeof(cpd.d)(μ, 3σ)
         end
     end
     ε′ = sample_noise(g′, args.n_samples)
@@ -142,7 +142,10 @@ function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     anomaly_nodes = sample(1:d, n_anomaly_nodes, replace=false)
     a = anomaly_nodes |> first
     for a in anomaly_nodes
-        ga.cpds[a].d = Uniform(3, 5)
+        # ga.cpds[a].d = Uniform(3, 5)
+        cpd = ga.cpds[a]
+        μ, σ = Distributions.params(cpd.d)
+        cpd.d = typeof(cpd.d)(μ, 3σ)
     end
     #-- anomaly data
     εa = sample_noise(ga, args.n_anomaly_samples)
@@ -213,9 +216,11 @@ function plot23d_pca(cpd, εs, xs, ys, μs, σs, εas, xas, yas, j, anomaly_node
     pl_data
 end
 
-function data_path(args)
-    "data/data-$(string(args.noise_dist))-$(args.data_id).bson"
-end
+data_path(d::Distribution, id) = data_path(dist_name(d), id)
+
+data_path(d::String, id) = "data/data-$d-$id.bson"
+
+dist_name(d::Distribution) = typeof(d).name.name
 
 function fig_name(args)
     "$(string(args.noise_dist))-$(args.data_id)"
@@ -227,19 +232,20 @@ end
 function generate_data(args)
     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
     n_downstream_nodes = n_nodes - n_root_nodes
-    # for noise_dist in [Normal(0, 1), Laplace(0, 1), ]
-    for noise_dist in [Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
+    # for noise_dist in []
+    for noise_dist in [Normal(0, 1), Laplace(0, 1), Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
         for data_id = 1:5
+            @info "generating " * data_path(noise_dist, data_id)
             g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, hidden, noise_dist, activation)
             ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
             @show anomaly_nodes
-            BSON.@save data_path(args) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
+            BSON.@save data_path(noise_dist, data_id) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
         end
     end
 end
 
 function plot_data(args)
-    @info "Loading data " * data_path(args)
+    @info "Loading " * data_path(args)
     BSON.@load data_path(args) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
     @> x mean, std
     @> xa mean, std
@@ -278,8 +284,8 @@ y: output mean: x ≈ y + ε
 return g, normal, perturb, and outlier data
 """
 function load_normalised_data(args)
-    @info "Loading data " * data_path(args)
-    BSON.@load data_path(args) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
+    @info "Loading " * data_path(args.noise_dist, args.data_id)
+    BSON.@load data_path(args.noise_dist, args.data_id) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
     @> x mean, std
     @> xa mean, std
     #-- normalise data
@@ -300,6 +306,6 @@ function load_normalised_data(args)
     return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
 end
 
-generate_data(args)
+# generate_data(args)
 # plot_data(args)
 
