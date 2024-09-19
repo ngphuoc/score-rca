@@ -35,12 +35,11 @@ include("models/UNetConditioned.jl")
 
 args = @env begin
     # graph
-    data_id = 1  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     noise_dist = Normal  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     noise_scale = 1.0  # n_root_nodes
     hidden = 10  # n_root_nodes
     min_depth = 3  # minimum depth of ancestors for the target node
-    n_nodes = 4
+    n_nodes = 10
     n_root_nodes = 1  # n_root_nodes
     n_anomaly_nodes = 2
     n_samples = 200  # n observations
@@ -217,67 +216,60 @@ function plot23d_pca(cpd, εs, xs, ys, μs, σs, εas, xas, yas, j, anomaly_node
     pl_data
 end
 
-function data_path(args)
-    "data/data-$(string(args.noise_dist))-$(args.data_id).bson"
-end
-
 """ Generate and save data
 5 normals, 5 laplaces
 """
-function generate_data(args)
+function generate_data(; args)
     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, noise_dist, hidden, activation = args
     n_downstream_nodes = n_nodes - n_root_nodes
-    for noise_dist in [Normal, Laplace]
-        for data_id = 1:5
+    # for noise_dist in [Normal, Laplace]
+    #     for _ = 1:5
             g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scale, hidden, noise_dist, activation)
             ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
             @show anomaly_nodes
-            BSON.@save data_path(args) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
 
-        end
-    end
+            @> x mean, std
+            @> xa mean, std
+
+            #-- normalise data
+            # X = @> hcat(x, x′);
+            X = x;
+            μx, σx = @> X mean(dims=2), std(dims=2);
+            normalise_x(x) = @. (x - μx) / σx
+            scale_ε(ε) = @. ε / σx
+            @≥ X, x, x′, xa, y, y′, ya normalise_x.();
+            @≥ ε, ε′, εa scale_ε.();
+            @assert x ≈ y + ε
+            @assert x′ ≈ y′ + ε′
+            @assert xa ≈ ya + εa
+
+            # plot_data(; g, ε, x, y, μx, σx, εa, xa, aμ)
+            d = @> g.dag adjacency_matrix size(1)
+
+            x1 = x[1, :]
+            xa1 = xa[1, :]
+            title = "Root"
+            p1 = scatter(x1, zero(x1); lab="input", leg=nothing, c=colors[1], xlab=L"dim_1", ylab=L"dim_2", zlab=L"output", title)
+            scatter!(p1, xa1, zero(xa1); lab="input outliers", leg=nothing, c=colors[2])
+            ps = plot1.(2:d; g, ε, x, y, μx, σx, εa, xa, ya, anomaly_nodes)
+            labels = ["input" "input outliers" "output" "output outliers" "output mean" "output mean outliers"]
+            n = length(labels)
+            l = @layout [Plots.grid(3, 3) a{0.2w}]
+            p0 = scatter([-1], [-1], c=colors[1], lims=(0,1), legendfontsize=7, legend=:left, label=labels[1], frame=:none);
+            [scatter!(p0, [-1], [-1], c=colors[i], label=labels[i]) for i=2:n]
+            # color_pallete
+            @> Plots.plot(p1, ps..., p0, layout=l, size=(1200, 800)) savefig("fig/fcm-outliers.pdf")
+        # end
+    # end
 end
 
 """ Load data from saved
 """
-function load_data(args)
+function load_data(; args)
     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden = args
     n_downstream_nodes = n_nodes - n_root_nodes
     g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden)
     g, draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
 end
 
-function plot_data(args)
-    @> x mean, std
-    @> xa mean, std
-    #-- normalise data
-    # X = @> hcat(x, x′);
-    X = x;
-    μx, σx = @> X mean(dims=2), std(dims=2);
-    normalise_x(x) = @. (x - μx) / σx
-    scale_ε(ε) = @. ε / σx
-    @≥ X, x, x′, xa, y, y′, ya normalise_x.();
-    @≥ ε, ε′, εa scale_ε.();
-    @assert x ≈ y + ε
-    @assert x′ ≈ y′ + ε′
-    @assert xa ≈ ya + εa
-    # plot_data(; g, ε, x, y, μx, σx, εa, xa, aμ)
-    d = @> g.dag adjacency_matrix size(1)
-    x1 = x[1, :]
-    xa1 = xa[1, :]
-    title = "Root"
-    p1 = scatter(x1, zero(x1); lab="input", leg=nothing, c=colors[1], xlab=L"dim_1", ylab=L"dim_2", zlab=L"output", title)
-    scatter!(p1, xa1, zero(xa1); lab="input outliers", leg=nothing, c=colors[2])
-    ps = plot1.(2:d; g, ε, x, y, μx, σx, εa, xa, ya, anomaly_nodes)
-    labels = ["input" "input outliers" "output" "output outliers" "output mean" "output mean outliers"]
-    n = length(labels)
-    l = @layout [Plots.grid(2, 2) a{0.2w}]
-    p0 = scatter([-1], [-1], c=colors[1], lims=(0,1), legendfontsize=7, legend=:left, label=labels[1], frame=:none);
-    [scatter!(p0, [-1], [-1], c=colors[i], label=labels[i]) for i=2:n]
-    # color_pallete
-    @> Plots.plot(p1, ps..., p0, layout=l, size=(1200, 800)) savefig("fig/fcm-outliers.pdf")
-end
-
-# generate_data(args)
-plot_data(args)
-
+generate_data(; args)

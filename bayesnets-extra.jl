@@ -7,7 +7,8 @@ include("bayesnets-fit.jl")
 
 """ Sample zero mean noises from cpd.d """
 function sample_noise(cpd::CPD, n_samples::Int)
-    rand(cpd.d, n_samples)
+    # rand(cpd.d, n_samples)
+    rand((-1f0, 1f0), n_samples) .* rand(cpd.d, n_samples)  # symmetric about 0
 end
 
 """ Sample zero mean noises from bn.cpds.d """
