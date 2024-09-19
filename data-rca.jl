@@ -188,7 +188,7 @@ function plot23d_pca(cpd, εs, xs, ys, μs, σs, εas, xas, yas, j, anomaly_node
     y = forward_scaled(cpd, xs, μs, σs)
     ya = forward_scaled(cpd, xas, μs, σs)
     #-- defaults
-    xlim = ylim = zlim = (-2, 2)
+    xlim = ylim = zlim = (-5, 5)
     default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markersize=2, markerstrokewidth=0, titlefontsize=12, fontfamily="Computer Modern", framestyle=:box)
     x12 = xs[1]
     xa12 = xas[1]
@@ -221,6 +221,10 @@ function data_path(args)
     "data/data-$(string(args.noise_dist))-$(args.data_id).bson"
 end
 
+function fig_name(args)
+    "$(string(args.noise_dist))-$(args.data_id)"
+end
+
 """ Generate and save data
 5 normals, 5 laplaces
 """
@@ -233,21 +237,13 @@ function generate_data(args)
             ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
             @show anomaly_nodes
             BSON.@save data_path(args) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
-
         end
     end
 end
 
-""" Load data from saved
-"""
-function load_data(args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden = args
-    n_downstream_nodes = n_nodes - n_root_nodes
-    g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden)
-    g, draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
-end
-
 function plot_data(args)
+    @info "Loading data " * data_path(args)
+    BSON.@load data_path(args) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
     @> x mean, std
     @> xa mean, std
     #-- normalise data
@@ -265,7 +261,9 @@ function plot_data(args)
     d = @> g.dag adjacency_matrix size(1)
     x1 = x[1, :]
     xa1 = xa[1, :]
-    title = "Root"
+    title = ""
+    s = 1 in anomaly_nodes ? "abnormal" : ""
+    title = "root $s"
     p1 = scatter(x1, zero(x1); lab="input", leg=nothing, c=colors[1], xlab=L"dim_1", ylab=L"dim_2", zlab=L"output", title)
     scatter!(p1, xa1, zero(xa1); lab="input outliers", leg=nothing, c=colors[2])
     ps = plot1.(2:d; g, ε, x, y, μx, σx, εa, xa, ya, anomaly_nodes)
@@ -275,9 +273,36 @@ function plot_data(args)
     p0 = scatter([-1], [-1], c=colors[1], lims=(0,1), legendfontsize=7, legend=:left, label=labels[1], frame=:none);
     [scatter!(p0, [-1], [-1], c=colors[i], label=labels[i]) for i=2:n]
     # color_pallete
-    @> Plots.plot(p1, ps..., p0, layout=l, size=(1200, 800)) savefig("fig/fcm-outliers.pdf")
+    @> Plots.plot(p1, ps..., p0, layout=l, size=(1200, 800)) savefig("fig/fcm-outliers-$(fig_name(args)).png")
+end
+
+""" Load data from saved, "/data/noise_dist-data_id.bson"
+y: output mean: x ≈ y + ε
+return normal, perturb, and outlier data
+"""
+function load_data(args)
+    @info "Loading data " * data_path(args)
+    BSON.@load data_path(args) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
+    @> x mean, std
+    @> xa mean, std
+    #-- normalise data
+    # X = @> hcat(x, x′);
+    X = x;
+    μx, σx = @> X mean(dims=2), std(dims=2);
+    normalise_x(x) = @. (x - μx) / σx
+    scale_ε(ε) = @. ε / σx
+    @≥ X, x, x′, xa, y, y′, ya normalise_x.();
+    @≥ ε, ε′, εa scale_ε.();
+    @assert x ≈ y + ε
+    @assert x′ ≈ y′ + ε′
+    @assert xa ≈ ya + εa
+    # plot_data(; g, ε, x, y, μx, σx, εa, xa, aμ)
+    d = @> g.dag adjacency_matrix size(1)
+    x1 = x[1, :]
+    xa1 = xa[1, :]
+    return x, x′, xa, y, y′, ya, ε, ε′, εa
 end
 
 # generate_data(args)
-plot_data(args)
+# plot_data(args)
 
