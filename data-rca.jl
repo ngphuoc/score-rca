@@ -87,11 +87,11 @@ n_root_nodes = 1
 n_downstream_nodes = 1
 activation = Flux.relu
 """
-function random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scale, hidden, noise_dist, activation)
+function random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, hidden, noise_dist, activation)
     @info "random_nonlinear_dag_generator"
     dag = BayesNet()
     for i in 1:n_root_nodes
-        cpd = RootCPD(Symbol("X$i"), noise_dist(0, 1))
+        cpd = RootCPD(Symbol("X$i"), noise_dist)
         push!(dag, cpd)
     end
     for i in 1:n_downstream_nodes
@@ -108,7 +108,7 @@ function random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scal
                    ) |> f64
         mlp[1].weight .= W1
         mlp[2].weight .= W2
-        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, noise_dist(0.0, Float64(noise_scale)))
+        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, noise_dist)
         push!(dag, cpd)
     end
     return dag
@@ -225,11 +225,12 @@ end
 5 normals, 5 laplaces
 """
 function generate_data(args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, noise_dist, hidden, activation = args
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
     n_downstream_nodes = n_nodes - n_root_nodes
-    for noise_dist in [Normal, Laplace]
+    # for noise_dist in [Normal(0, 1), Laplace(0, 1), ]
+    for noise_dist in [Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
         for data_id = 1:5
-            g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, noise_scale, hidden, noise_dist, activation)
+            g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, hidden, noise_dist, activation)
             ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
             @show anomaly_nodes
             BSON.@save data_path(args) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
@@ -299,6 +300,6 @@ function load_normalised_data(args)
     return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
 end
 
-# generate_data(args)
+generate_data(args)
 # plot_data(args)
 

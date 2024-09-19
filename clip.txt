@@ -9,3 +9,22 @@ end
 
 dx = @> get_score.([dnet], transpose.(eachrow(x))) vcats
 
+
+df = DataFrame(n_nodes0=Int[],
+               n_nodes=Int[],
+               n=Int[],
+               e = Int[],
+               shapley_node = Float64[],
+               shapley_edge = Float64[],
+               sampling_node = Float64[],
+               sampling_edge = Float64[],
+               permutation_node = Float64[],
+               permutation_edge = Float64[],
+               naive_node = Float64[],
+               naive_edge = Float64[],
+               grad_node = Float64[],
+               grad_edge = Float64[],
+               k = Int[],
+               μ0 = Float64[],
+               μ1 = Float64[])
+
