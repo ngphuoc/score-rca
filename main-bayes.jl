@@ -101,6 +101,7 @@ anomaly_measure = abs.(∇xa)
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
+
 gt_manual = indexin(1:args.n_nodes, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
@@ -119,14 +120,9 @@ df = DataFrame(
               )
 
 k = 1
-anomaly_measure = abs.((ε̂a - ε̂r) .* ∇xa)'
-# a = anomaly_measure
-# @≥ a reshape(:, 5, 4)
-# i = @> a std(dims=3) squeeze(3) argmax(dims=2) vec
-# a[i, :]
 for k=1:args.min_depth
-    ndcg_ranking = ndcg_score(gt_value', anomaly_measure; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_measure; k)
+    ndcg_ranking = ndcg_score(gt_value', abs.((ε̂a - ε̂r) .* ∇xa)'; k)
+    ndcg_manual = ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)'; k)
     @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
     push!(df, [args.n_nodes, args.n_anomaly_nodes, "DSM", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
