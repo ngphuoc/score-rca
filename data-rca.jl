@@ -218,7 +218,7 @@ end
 
 data_path(d::Distribution, id) = data_path(dist_name(d), id)
 
-data_path(d::String, id) = "data/data-$d-$id.bson"
+data_path(d<:Union{String, Symbol}, id) = "data/data-$d-$id.bson"
 
 dist_name(d::Distribution) = typeof(d).name.name
 
@@ -306,6 +306,6 @@ function load_normalised_data(args)
     return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
 end
 
-# generate_data(args)
+generate_data(args)
 # plot_data(args)
 
