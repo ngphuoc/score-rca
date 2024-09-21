@@ -20,8 +20,17 @@ function forward_1step_mean(bn::BayesNet, x::AbstractMatrix{T}, ii) where T
     @> forward.(bn.cpds, getindex.([x], ii, :)) vcats
 end
 
-"""
-"""
+function forward_1step(g::BayesNet, x::AbstractMatrix{T}) where T
+    d = nv(g.dag)
+    @> forward_1step.(1:d; g, x) vcats
+end
+
+function forward_1step(j::Int; g, x)
+    cpd = g.cpds[j]
+    paj = @> g.dag adjacency_matrix Matrix{Bool} getindex(:, j)
+    y = forward(cpd, x[paj, :])
+end
+
 function forward_1step_scaled(g::BayesNet, x::AbstractMatrix{T}, μx, σx) where T
     d = @> g.dag adjacency_matrix size(1)
     @> forward_1step_scaled.(1:d; g, x, μx, σx) vcats
@@ -55,6 +64,10 @@ end
 
 function forward(cpd::MlpCPD, x::AbstractArray{T}) where T
     μ = cpd.mlp(x)
+end
+
+function forward(cpd::LinearCPD, x::AbstractArray{T}) where T
+    μ = cpd.a'x
 end
 
 function forward(cpd::LocationCPD, x::AbstractArray{T}) where T

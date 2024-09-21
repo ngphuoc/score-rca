@@ -12,6 +12,7 @@ function Distributions.fit(::Type{BayesNet}, data::DataFrame, dag::DAG, cpd_type
 
     BayesNet(cpds)
 end
+
 function Distributions.fit(::Type{BayesNet}, data::DataFrame, dag::DAG, ::Type{C}) where {C<:CPD}
 
     cpds = Array{C}(undef, nv(dag))
@@ -23,6 +24,7 @@ function Distributions.fit(::Type{BayesNet}, data::DataFrame, dag::DAG, ::Type{C
 
     BayesNet(cpds)
 end
+
 Distributions.fit(::Type{BayesNet{T}}, data::DataFrame, dag::DAG) where {T<:CPD} = fit(BayesNet, data, dag, T)
 
 function _get_dag(data::DataFrame, edges::Tuple{Vararg{Pair{NodeName, NodeName}}})

@@ -113,6 +113,18 @@ function random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, hidden, no
     return dag
 end
 
+function copy_linear_dag(bn)
+    g = deepcopy(bn)
+    for i = 1:length(g.cpds)
+        cpd = g.cpds[i]
+        if length(cpd.parents) > 0
+            a = randn(length(cpd.parents))
+            g.cpds[i] = LinearCPD(cpd.target, cpd.parents, a, cpd.d)
+        end
+    end
+    g
+end
+
 function Base.getindex(bn::BayesNet, node::Symbol)
     bn.cpds[bn.name_to_index[node]]
 end

@@ -28,3 +28,20 @@ df = DataFrame(n_nodes0=Int[],
                μ0 = Float64[],
                μ1 = Float64[])
 
+#-- from main-circa.jl
+
+function get_residual(bn, x)
+    μx = forward_1step(bn, x)
+
+    t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+    @> dnet(x, t)
+
+end
+
+get_scores(dnet, x) = @> get_residual.([dnet], transpose.(eachrow(x))) vcats
+
+dz = get_residual(dnet, z)
+dx = get_scores(dnet, x)
+
+vx = abs.(dx)  # anomaly_measure
+
