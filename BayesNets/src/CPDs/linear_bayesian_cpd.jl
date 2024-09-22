@@ -74,6 +74,9 @@ function Distributions.fit(::Type{LinearBayesianCPD}, data::DataFrame, target::N
 end
 
 function Distributions.fit!(cpd::LinearBayesianCPD, X, y)
+    n, d = size(X)
+    @assert n > d
+    @unpack m, ps = cpd
     cpd.ps = posterior(cpd.m, cpd.ps, X, y)
     return cpd
 end
