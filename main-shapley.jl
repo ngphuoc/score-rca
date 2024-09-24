@@ -1,9 +1,11 @@
+using Flux: Data
 using Revise
 using Flux
 include("./data-rca.jl")
 include("./lib/utils.jl")
 include("./denoising-score-matching.jl")
 include("./plot-dsm.jl")
+seed = 1
 
 const to_device = args.to_device
 
@@ -16,22 +18,33 @@ z = x - y
 @≥ z vec transpose;
 @≥ z, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx to_device.()
 
-bn = copy_bayesian_dag(g)
+bn = copy_linear_dag(g)
 g.cpds
 bn.cpds
 Distributions.fit!(bn, x)
 
 @info "#-- 2. define residual function as outlier scores"
 
-μx = forward_1step(bn, x)
-
-function get_residual(bn, x)
-    μx = forward_1step(bn, x)
-    x - μx
+function predict_function(bn, noise)
+    DataFrame(ŷ = forward_leaf(bn, Array(noise)'))
 end
 
-ε̂x = get_residual(bn, x)
-vx = abs.(ε̂x)  # anomaly_measure
+function inverse_noise(bn, x)
+    x - forward_1step(bn, x)
+end
+
+ε̂a = inverse_noise(bn, xa)
+explain = DataFrame(ε̂a', names(g))
+ε̂ = inverse_noise(bn, x)
+reference = DataFrame(ε̂', names(g))
+
+sample_size = 50  # Number of Monte Carlo samples.
+data_shap = ShapML.shap(; explain , reference , model=bn , predict_function , sample_size , seed ,)
+show(data_shap, allcols = true)
+m = nrow(explain)
+a = @> data_shap[!, :feature_name] reshape(m, :)
+anomaly_measure = @> data_shap[!, :shap_effect] reshape(m, :)
+anomaly_nodes
 
 @info "#-- 3. ground truth ranking and results"
 
@@ -66,10 +79,6 @@ gt_value = @> get_ε_rankings(εa, ∇εa) hcats
 @> gt_value mean(dims=2)
 anomaly_nodes
 
-μa = forward_1step(g, xa)
-ε̂a = xa - μa
-anomaly_measure = abs.(get_residual(bn, xa))  # anomaly_measure
-
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
@@ -91,10 +100,10 @@ df = DataFrame(
 
 k = 1
 for k=1:args.min_depth
-    ndcg_ranking = ndcg_score(gt_value', anomaly_measure'; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_measure'; k)
+    ndcg_ranking = ndcg_score(gt_value', anomaly_measure; k)
+    ndcg_manual = ndcg_score(gt_manual', anomaly_measure; k)
     @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "Bayesian", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
+    push!(df, [args.n_nodes, args.n_anomaly_nodes, "Shapley", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
 
 println(df);
