@@ -76,15 +76,22 @@ function travesal_measure(g, xa, x)
     A = mapreduce(i -> B^i, (a,b) -> min.(a, b), 1:d-1)
     f = maximum
     A = @> I(d) + B Matrix{Bool}
+
     for x1 = eachcol(v)
-        # propagate max/min from root to leaf
-        a = maxmul(A', x1);
-        b = minmul(A', x1);
-        for i = 2:d-1
-            a = maxmul(A', a)
-            b = minmul(A', b)
+        #-- propagate max/min from root to leaf at path length 0:d-1
+        @≥ x1 Array
+        as = [x1]
+        bs = [x1]
+        for i = 1:d-1
+            push!(as, maxmul(A', as[end]))
+            push!(bs, minmul(A', bs[end]))
         end
-        y = similar(a)
+        #-- travesal algorithm, no abnormal before j, all abnormal after j: minscore(>=j) - maxscore(<j)
+        y = similar(x1)
+        for j = 1:d
+            a, b = as[j], bs[d-j]
+
+        end
     end
 end
 
