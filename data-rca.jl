@@ -36,14 +36,14 @@ include("models/UNetConditioned.jl")
 
 args = @env begin
     #-- graph
-    data_id = 2  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
+    data_id = 3  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     noise_dist = "Normal"  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
-    hidden = 10  # n_root_nodes
     min_depth = 5  # minimum depth of ancestors for the target node
-    n_nodes = 10
+    n_nodes = 15
     n_root_nodes = 1  # n_root_nodes
     n_anomaly_nodes = 2
     n_samples = 500  # n observations
+    hidden = 10
     anomaly_fraction = 0.1
     n_anomaly_samples = 50  # n faulty observations
     activation=Flux.relu

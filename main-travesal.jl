@@ -84,30 +84,38 @@ end
 function travesal_measure(g, xa, x)
     d = nv(g.dag)
     v = Distributions.cdf(Normal(0, 1), -abs.(zscore(xa, x)))
-    A = I(d) + adjacency_matrix(g.dag)
-    j, l = 2, 5
-    P = I(d) + adjacency_matrix(path_graph(g.dag, j, l))
-    @≥ A, P Matrix{Bool}.()
-    x1 = v[:, end-1]
+    A = @> I(d) + adjacency_matrix(g.dag) Matrix{Bool}
+    x1 = v[:, 2]
+    ys = []
     for x1 = eachcol(v)
-        #-- propagate max/min from root to leaf at path length 0:d-1
+        # travesal algorithm - no abnormal before j, all abnormal after j: minscore(>=j) - maxscore(<j)
         @≥ x1 Array
-        a1, b1 = copy(x1), copy(x1)
+        a1, b1 = @> copy(x1), copy(x1) Array{Float32}.()
         as = [a1]  # before j
-        bs = [b1]  # after j
-        for i = 1:d-1
-            push!(as, maxmul(A', as[end]))
-            push!(bs, minmul(P', bs[end]))
+        # no abnormal before j: propagate max from root to j
+        for j = 1:d-1
+            xj = copy(as[end])
+            xj[j] = 0
+            push!(as, maxmul(A', xj))
         end
-        vj = bs[end][l] - as[end][j]
 
-        #-- travesal algorithm, no abnormal before j, all abnormal after j: minscore(>=j) - maxscore(<j)
         y = similar(x1)
         for j = 1:d
-            a, b = as[j], bs[d-j]
-
+            # all abnormal after j: propagate min from j to leaf d, path at most length j+1:d
+            P = @> I(d) + adjacency_matrix(path_graph(g.dag, j, d)) Matrix{Bool}
+            bs = [b1]  # after j
+            for i = j+1:d
+                push!(bs, minmul(P', bs[end]))
+            end
+            # minscore(>=j) - maxscore(<j)
+            y[j] = bs[end][d] - as[end][j]
         end
+        hcat(x1, y)
+        A
+        push!(ys, y)
     end
+    hcats(ys)
+    ys
 end
 
 using PythonCall
