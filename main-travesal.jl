@@ -1,9 +1,9 @@
 using Revise
 using Flux
-include("./data-rca.jl")
-include("./lib/utils.jl")
-include("./denoising-score-matching.jl")
-include("./plot-dsm.jl")
+include("data-rca.jl")
+include("lib/utils.jl")
+include("denoising-score-matching.jl")
+include("plot-dsm.jl")
 
 const to_device = args.to_device
 
