@@ -8,6 +8,8 @@ include("plot-dsm.jl")
 const to_device = args.to_device
 
 g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
+B = @> g.dag adjacency_matrix Matrix{Bool}
+anomaly_nodes
 
 @info "#-- 1. fit linear bayesnet"
 
@@ -61,7 +63,8 @@ function fmul(f, A::AbstractMatrix{Bool}, x1)
     y = similar(x1)
     for j = 1:d
         a = A[j, :]
-        y[j] = f((a .* x1)[a])
+        z = (a .* x1)[a]
+        y[j] = length(z) > 0 ? f(z) : 0f0
     end
     y
 end
@@ -69,23 +72,35 @@ end
 maxmul(A, x1) = fmul(maximum, A, x1)
 minmul(A, x1) = fmul(minimum, A, x1)
 
+""" Subgraph connecting node j and node l"""
+function path_graph(dag, j, l)
+    g = DiGraph(nv(dag))
+    for e = a_star(dag, j, l)
+        add_edge!(g, e.src, e.dst);
+    end
+    g
+end
+
 function travesal_measure(g, xa, x)
-    B = @> g.dag adjacency_matrix Matrix{Bool}
     d = nv(g.dag)
     v = Distributions.cdf(Normal(0, 1), -abs.(zscore(xa, x)))
-    A = mapreduce(i -> B^i, (a,b) -> min.(a, b), 1:d-1)
-    f = maximum
-    A = @> I(d) + B Matrix{Bool}
-
+    A = I(d) + adjacency_matrix(g.dag)
+    j, l = 2, 5
+    P = I(d) + adjacency_matrix(path_graph(g.dag, j, l))
+    @≥ A, P Matrix{Bool}.()
+    x1 = v[:, end-1]
     for x1 = eachcol(v)
         #-- propagate max/min from root to leaf at path length 0:d-1
         @≥ x1 Array
-        as = [x1]
-        bs = [x1]
+        a1, b1 = copy(x1), copy(x1)
+        as = [a1]  # before j
+        bs = [b1]  # after j
         for i = 1:d-1
             push!(as, maxmul(A', as[end]))
-            push!(bs, minmul(A', bs[end]))
+            push!(bs, minmul(P', bs[end]))
         end
+        vj = bs[end][l] - as[end][j]
+
         #-- travesal algorithm, no abnormal before j, all abnormal after j: minscore(>=j) - maxscore(<j)
         y = similar(x1)
         for j = 1:d

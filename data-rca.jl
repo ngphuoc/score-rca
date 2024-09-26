@@ -24,6 +24,7 @@ include("./lib/utils.jl")
 include("./mlp-unet-2d.jl")
 # include("./random-graph-datasets.jl")
 include("./rca.jl")
+include("./rca-graph.jl")
 include("utilities.jl")
 include("models/embed.jl")
 include("models/ConditionalChain.jl")
@@ -35,11 +36,11 @@ include("models/UNetConditioned.jl")
 
 args = @env begin
     #-- graph
-    data_id = 1  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
+    data_id = 2  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     noise_dist = "Normal"  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     hidden = 10  # n_root_nodes
-    min_depth = 3  # minimum depth of ancestors for the target node
-    n_nodes = 4
+    min_depth = 5  # minimum depth of ancestors for the target node
+    n_nodes = 10
     n_root_nodes = 1  # n_root_nodes
     n_anomaly_nodes = 2
     n_samples = 500  # n observations
@@ -90,28 +91,31 @@ function random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, no
     @info "random_nonlinear_dag_generator"
     dag = random_rca_dag(min_depth, n_nodes, n_root_nodes)
     B = @> dag adjacency_matrix Matrix{Bool}
-
+    d = nv(dag)
     dag = BayesNet()
-    for i in 1:n_root_nodes
-        cpd = RootCPD(Symbol("X$i"), noise_dist)
-        push!(dag, cpd)
-    end
-    for i in 1:n_downstream_nodes
-        parents = sample(names(dag), min(sample_natural_number(init_mass=0.6), length(dag)), replace=false)
-        # Random mechanism
-        pa_size = length(parents)
-        W1 = rand(Uniform(0.5, 2.0), (hidden, pa_size))
-        W1[rand(size(W1)...) .< 0.5] .*= -1
-        W2 = rand(Uniform(0.5, 2.0), (1, hidden))
-        W2[rand(size(W2)...) .< 0.5] .*= -1
-        mlp = Chain(
-                    Dense(pa_size => hidden, activation, bias=false),
-                    Dense(hidden => 1, bias=false),
-                   ) |> f64
-        mlp[1].weight .= W1
-        mlp[2].weight .= W2
-        cpd = MlpCPD(Symbol("X$(i + n_root_nodes)"), parents, mlp, noise_dist)
-        push!(dag, cpd)
+    node_names = [Symbol("X$i") for i=1:d]
+    for j in 1:d
+        if sum(B[:, j]) == 0  # root
+            cpd = RootCPD(node_names[j], noise_dist)
+            push!(dag, cpd)
+        else  # leaf
+            ii = findall(B[:, j])
+            parents = node_names[ii]
+            # Random mechanism
+            pa_size = length(parents)
+            W1 = rand(Uniform(0.5, 2.0), (hidden, pa_size))
+            W1[rand(size(W1)...) .< 0.5] .*= -1
+            W2 = rand(Uniform(0.5, 2.0), (1, hidden))
+            W2[rand(size(W2)...) .< 0.5] .*= -1
+            mlp = Chain(
+                        Dense(pa_size => hidden, activation, bias=false),
+                        Dense(hidden => 1, bias=false),
+                       ) |> f64
+            mlp[1].weight .= W1
+            mlp[2].weight .= W2
+            cpd = MlpCPD(node_names[j], parents, mlp, noise_dist)
+            push!(dag, cpd)
+        end
     end
     return dag
 end
@@ -257,12 +261,11 @@ end
 """
 function generate_data(args)
     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
-    n_downstream_nodes = n_nodes - n_root_nodes
     # for noise_dist in []
     for noise_dist in [Normal(0, 1), Laplace(0, 1), Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
         for data_id = 1:5
             @info "generating " * data_path(noise_dist, data_id)
-            g = random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, hidden, noise_dist, activation)
+            g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dist, activation)
             ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
             @show anomaly_nodes
             BSON.@save data_path(noise_dist, data_id) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
