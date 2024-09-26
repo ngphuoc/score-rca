@@ -86,8 +86,11 @@ n_root_nodes = 1
 n_downstream_nodes = 1
 activation = Flux.relu
 """
-function random_mlp_dag_generator(; n_root_nodes, n_downstream_nodes, hidden, noise_dist, activation)
+function random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dist, activation)
     @info "random_nonlinear_dag_generator"
+    dag = random_rca_dag(min_depth, n_nodes, n_root_nodes)
+    B = @> dag adjacency_matrix Matrix{Bool}
+
     dag = BayesNet()
     for i in 1:n_root_nodes
         cpd = RootCPD(Symbol("X$i"), noise_dist)
