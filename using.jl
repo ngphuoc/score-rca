@@ -1,6 +1,5 @@
 using Revise,
  CSV,
- CUDA,
  DataFrames,
  Distributions,
  EndpointRanges,
@@ -18,7 +17,6 @@ using Revise,
  Zygote
 using Parameters: @unpack
 
-CUDA.allowscalar(false)
 
 include("lib/utils.jl")
 include("lib/graph.jl")

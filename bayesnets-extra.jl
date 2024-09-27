@@ -1,4 +1,4 @@
-using BayesNets
+using BayesNets, Parameters
 include("bayesnets-fit.jl")
 
 @showfields BayesNet

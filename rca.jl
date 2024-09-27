@@ -1,5 +1,3 @@
-# include("imports.jl")
-
 using Revise
 using DataFrames, Distributions, BayesNets, CSV, Tables
 using BayesNets: plot, name
@@ -9,12 +7,11 @@ using Revise
 using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
 using Optimisers, BSON
 using ProgressMeter: Progress, next!
-using CUDA
 using Flux
 using Flux: gpu, Chain, Dense, relu, DataLoader
 
+include("lib/utils.jl")
 include("bayesnets-extra.jl")
-include("group-mlp.jl")
 include("lib/diffusion.jl")
 
 function df_(pydf)

@@ -1,4 +1,4 @@
-using Flux
+using Flux, Functors, Optimisers
 
 struct DSM{T}
     σ_max::Float32
