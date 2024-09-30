@@ -5,6 +5,12 @@ include("./lib/utils.jl")
 include("./denoising-score-matching.jl")
 include("./plot-dsm.jl")
 
+include("./main-bayesian.jl")
+include("./main-circa.jl")
+include("./main-dsm.jl")
+include("./main-shapley.jl")
+include("./main-traversal.jl")
+
 const to_device = args.to_device
 
 g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);

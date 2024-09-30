@@ -9,6 +9,7 @@ using Flux.Data: DataLoader
 using Flux: crossentropy
 using Optimisers: Optimisers, trainable
 using ColorSchemes
+using Glob
 color_pallete = Plots.palette(:Paired_10)
 colors = color_pallete.colors
 
@@ -18,6 +19,7 @@ include("./lib/outlier.jl")
 include("./lib/diffusion.jl")
 include("./lib/graph.jl")
 include("./lib/nnlib.jl")
+include("./lib/distributions.jl")
 include("./rca-graph.jl")
 include("./rca.jl")
 include("utilities.jl")
@@ -82,16 +84,16 @@ n_root_nodes = 1
 n_downstream_nodes = 1
 activation = Flux.relu
 """
-function random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dist, activation)
+function random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
     @info "random_nonlinear_dag_generator"
     dag = random_rca_dag(min_depth, n_nodes, n_root_nodes)
     B = @> dag adjacency_matrix Matrix{Bool}
     d = nv(dag)
     dag = BayesNet()
     node_names = [Symbol("X$i") for i=1:d]
-    for j in 1:d
+    for j = 1:d
         if sum(B[:, j]) == 0  # root
-            cpd = RootCPD(node_names[j], noise_dist)
+            cpd = RootCPD(node_names[j], noise_dists)
             push!(dag, cpd)
         else  # leaf
             ii = findall(B[:, j])
@@ -108,7 +110,7 @@ function random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, no
                        ) |> f64
             mlp[1].weight .= W1
             mlp[2].weight .= W2
-            cpd = MlpCPD(node_names[j], parents, mlp, noise_dist)
+            cpd = MlpCPD(node_names[j], parents, mlp, noise_dists)
             push!(dag, cpd)
         end
     end
@@ -142,6 +144,15 @@ function Base.getindex(bn::BayesNet, node::Symbol)
     bn.cpds[bn.name_to_index[node]]
 end
 
+function scale3(d::MixedDist)
+    MixedDist(scale3.(d.ds))
+end
+
+function scale3(d)
+    μ, σ = Distributions.params(d)
+    typeof(d)(μ, 3σ)
+end
+
 """
 TODO? return data, noise, and ∇noise
 """
@@ -152,15 +163,14 @@ function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     x = forward(g, ε)
 
     #-- perturbed data, 3σ
-    g′ = deepcopy(g)
-    for cpd = g′.cpds
+    g3 = deepcopy(g)
+    for cpd = g3.cpds
         if isempty(parents(cpd))  # perturb root nodes
-            μ, σ = Distributions.params(cpd.d)
-            cpd.d = typeof(cpd.d)(μ, 3σ)
+            cpd.d = scale3(cpd.d)
         end
     end
-    ε′ = sample_noise(g′, args.n_samples)
-    x′ = forward(g′, ε′)
+    ε3 = sample_noise(g3, args.n_samples)
+    x3 = forward(g3, ε3)
 
     #-- select anomaly nodes
     ga = deepcopy(g)
@@ -169,31 +179,26 @@ function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
     for a in anomaly_nodes
         # ga.cpds[a].d = Uniform(3, 5)
         cpd = ga.cpds[a]
-        μ, σ = Distributions.params(cpd.d)
-        cpd.d = typeof(cpd.d)(μ, 3σ)
+        cpd.d = scale3(cpd.d)
     end
+
     #-- anomaly data
-    εa = sample_noise(ga, args.n_anomaly_samples)
+    εa = sample_noise(ga, 20args.n_anomaly_samples)
     xa = forward(ga, εa)
-
+    εa
+    ds = [cpd.d for cpd in g.cpds]
+    za = @> zval.(ds, eachrow(εa)) hcats transpose
+    anomaly_nodes
+    z2 = za[anomaly_nodes, :]
+    @> abs.(z2) .> 3 minimum(dims=1) vec
+    ia = @> abs.(z2) .> 3 minimum(dims=1) vec findall
+    ia = ia[1:args.n_anomaly_samples]
+    εa = εa[:, ia]
+    xa = xa[:, ia]
     y = x - ε
-    y′ = x′ - ε′
+    y3 = x3 - ε3
     ya = xa - εa
-    return ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes
-end
-
-"""
-scale, hidden = 0.5, 100
-n_nodes=round(Int, min_depth^2 / 3 + 1)
-n_root_nodes=rand(1, n_nodes÷5+1)
-scale=0.5
-hidden=100
-"""
-function get_data(; args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_scale, hidden, activation = args
-    n_downstream_nodes = n_nodes - n_root_nodes
-    g = random_mlp_dag_generator(n_root_nodes, n_downstream_nodes, noise_scale, hidden, activation)
-    g, draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+    return ε, x, y, ε3, x3, y3, εa, xa, ya, anomaly_nodes
 end
 
 function plot1(j; g, ε, x, y, μx, σx, εa, xa, ya, anomaly_nodes)
@@ -247,6 +252,8 @@ function dist_name(d::Distribution)
     "$s$σ"
 end
 
+data_path(d::MixedDist) = data_path(d.ds)
+
 function data_path(ds::AbstractVector{<:Distribution})
     s = @> dist_name.(ds) join
     "data/data-$s.bson"
@@ -260,54 +267,34 @@ function fig_name(args)
     "$(string(args.noise_dist))-$(args.data_id)"
 end
 
-""" Generate and save data
-5 normals, 5 laplaces
-"""
 function generate_data_skewed(args)
     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
-    # for noise_dist in []
-    noise_dists = [Normal(0, 1), Laplace(0, 0.5)]
-    # for noise_dists in [Normal(0, 1), Laplace(0, 1), Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
+    for _ = 1:5
+        ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
+        noise_dists = MixedDist(ds)
         @info "generating " * data_path(noise_dists)
         g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
-        ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+        ε, x, y, ε3, x3, y3, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
         @show anomaly_nodes
-        BSON.@save data_path(noise_dists) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
-    # end
-end
-
-""" Generate and save data
-5 normals, 5 laplaces
-"""
-function generate_data(args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
-    # for noise_dist in []
-    for noise_dist in [Normal(0, 1), Laplace(0, 1), Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
-        for data_id = 1:5
-            @info "generating " * data_path(noise_dist, data_id)
-            g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dist, activation)
-            ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
-            @show anomaly_nodes
-            BSON.@save data_path(noise_dist, data_id) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
-        end
+        BSON.@save data_path(noise_dists) args g ε x y ε3 x3 y3 εa xa ya anomaly_nodes ds
     end
 end
 
 function plot_data(args)
     @info "Loading " * data_path(args)
-    BSON.@load data_path(args) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
+    BSON.@load data_path(args) g ε x y ε3 x3 y3 εa xa ya anomaly_nodes  # don't load args
     @> x mean, std
     @> xa mean, std
     #-- normalise data
-    # X = @> hcat(x, x′);
+    # X = @> hcat(x, x3);
     X = x;
     μx, σx = @> X mean(dims=2), std(dims=2);
     normalise_x(x) = @. (x - μx) / σx
     scale_ε(ε) = @. ε / σx
-    @≥ X, x, x′, xa, y, y′, ya normalise_x.();
-    @≥ ε, ε′, εa scale_ε.();
+    @≥ X, x, x3, xa, y, y3, ya normalise_x.();
+    @≥ ε, ε3, εa scale_ε.();
     @assert x ≈ y + ε
-    @assert x′ ≈ y′ + ε′
+    @assert x3 ≈ y3 + ε3
     @assert xa ≈ ya + εa
     # plot_data(; g, ε, x, y, μx, σx, εa, xa, aμ)
     d = @> g.dag adjacency_matrix size(1)
@@ -333,29 +320,30 @@ y: output mean: x ≈ y + ε
 return g, normal, perturb, and outlier data
 """
 function load_normalised_data(args)
-    @info "Loading " * data_path(args.noise_dist, args.data_id)
-    BSON.@load data_path(args.noise_dist, args.data_id) g ε x y ε′ x′ y′ εa xa ya anomaly_nodes  # don't load args
+    fpath = glob("data/*.bson")[args.data_id]
+    @info "Loading " * fpath
+    BSON.@load fpath g ε x y ε3 x3 y3 εa xa ya anomaly_nodes ds  # don't load args
     @> x mean, std
     @> xa mean, std
     #-- normalise data
-    # X = @> hcat(x, x′);
+    # X = @> hcat(x, x3);
     X = x;
     μx, σx = @> X mean(dims=2), std(dims=2);
     normalise_x(x) = @. (x - μx) / σx
     scale_ε(ε) = @. ε / σx
-    @≥ X, x, x′, xa, y, y′, ya normalise_x.();
-    @≥ ε, ε′, εa scale_ε.();
+    @≥ X, x, x3, xa, y, y3, ya normalise_x.();
+    @≥ ε, ε3, εa scale_ε.();
     @assert x ≈ y + ε
-    @assert x′ ≈ y′ + ε′
+    @assert x3 ≈ y3 + ε3
     @assert xa ≈ ya + εa
     # plot_data(; g, ε, x, y, μx, σx, εa, xa, aμ)
     d = @> g.dag adjacency_matrix size(1)
     x1 = x[1, :]
     xa1 = xa[1, :]
-    return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
+    return g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes
 end
 
 # generate_data(args)
-generate_data_skewed(args)
+# generate_data_skewed(args)
 # plot_data(args)
 
