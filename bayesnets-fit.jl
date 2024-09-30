@@ -1,4 +1,5 @@
 using BayesNets
+using BayesNets: NonlinearGaussianCPD
 
 function Distributions.fit(::Type{NonlinearGaussianCPD}, df::DataFrame, node::NodeName, pa::NodeNames; args)
     H = args.hidden_dim

@@ -17,7 +17,6 @@ include("./lib/graph.jl")
 include("./lib/outlier.jl")
 include("./lib/diffusion.jl")
 include("./lib/graph.jl")
-include("./lib/nn.jl")
 include("./lib/nnlib.jl")
 include("./rca-graph.jl")
 include("./rca.jl")
@@ -350,6 +349,6 @@ function load_normalised_data(args)
     return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
 end
 
-# generate_data(args)
+generate_data(args)
 # plot_data(args)
 

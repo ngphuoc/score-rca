@@ -6,3 +6,5 @@ scipy
 seaborn
 scikit-learn
 matplotlib
+dowhy==0.8
+ipython
