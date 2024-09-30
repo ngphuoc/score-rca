@@ -5,12 +5,6 @@ include("./lib/utils.jl")
 include("./denoising-score-matching.jl")
 include("./plot-dsm.jl")
 
-include("./main-bayesian.jl")
-include("./main-circa.jl")
-include("./main-dsm.jl")
-include("./main-shapley.jl")
-include("./main-traversal.jl")
-
 const to_device = args.to_device
 
 g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
@@ -107,7 +101,7 @@ anomaly_measure = abs.(∇xa)
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
-gt_manual = indexin(1:args.n_nodes, anomaly_nodes) .!= nothing
+gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
 

@@ -73,7 +73,7 @@ anomaly_measure = abs.(get_residual(bn, xa))  # anomaly_measure
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
-gt_manual = indexin(1:args.n_nodes, anomaly_nodes) .!= nothing
+gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 
 @info "#-- 4. save results"
