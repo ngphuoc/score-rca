@@ -1,4 +1,3 @@
-using CUDA: functional
 using Optimisers
 using Functors: @functor
 using Parameters: @unpack

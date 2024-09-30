@@ -1,6 +1,5 @@
 using PythonCall
 using Parameters: @unpack
-using ExponentialAction: parameters
 using Distributions: sample, mean, std
 using DataFrames
 using Flux: onehot

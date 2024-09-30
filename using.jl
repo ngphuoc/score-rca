@@ -22,6 +22,4 @@ include("lib/utils.jl")
 include("lib/graph.jl")
 # include("lib/nnlib.jl")
 # include("lib/prob.jl")
-# include("lib/nn.jl")
-# include("lib/maths.jl")
 
