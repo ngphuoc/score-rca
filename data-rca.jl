@@ -241,14 +241,39 @@ function plot23d_pca(cpd, εs, xs, ys, μs, σs, εas, xas, yas, j, anomaly_node
     pl_data
 end
 
-data_path(d::Distribution, id) = data_path(dist_name(d), id)
+function dist_name(d::Distribution)
+    s = typeof(d).name.name
+    σ = scale(d)
+    "$s$σ"
+end
 
-data_path(d::T, id) where T<:Union{String, Symbol} = "data/data-$d-$id.bson"
+function data_path(ds::AbstractVector{<:Distribution})
+    s = @> dist_name.(ds) join
+    "data/data-$s.bson"
+end
 
-dist_name(d::Distribution) = typeof(d).name.name
+# ds = [Normal(0, 1), Laplace(0, 0.5)]
+# d = ds[1]
+# data_path(d::T, id) where T<:Union{String, Symbol} = "data/data-$d-$id.bson"
 
 function fig_name(args)
     "$(string(args.noise_dist))-$(args.data_id)"
+end
+
+""" Generate and save data
+5 normals, 5 laplaces
+"""
+function generate_data_skewed(args)
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
+    # for noise_dist in []
+    noise_dists = [Normal(0, 1), Laplace(0, 0.5)]
+    # for noise_dists in [Normal(0, 1), Laplace(0, 1), Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
+        @info "generating " * data_path(noise_dists)
+        g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
+        ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+        @show anomaly_nodes
+        BSON.@save data_path(noise_dists) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
+    # end
 end
 
 """ Generate and save data
@@ -266,25 +291,6 @@ function generate_data(args)
             BSON.@save data_path(noise_dist, data_id) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
         end
     end
-end
-
-""" Generate and save data
-5 normals, 5 laplaces
-"""
-function generate_data_skewed(args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
-    # for noise_dist in []
-    noise_dist = Normal(0, 1)
-    data_id = 1
-    # for noise_dist in [Normal(0, 1), Laplace(0, 1), Gumbel(1, 2), Frechet(2, 1), Weibull(1, 1)]
-    #     for data_id = 1:5
-            @info "generating " * data_path(noise_dist, data_id)
-            g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dist, activation)
-            ε, x, y, ε′, x′, y′, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
-            @show anomaly_nodes
-            BSON.@save data_path(noise_dist, data_id) args g ε x y ε′ x′ y′ εa xa ya anomaly_nodes
-        # end
-    # end
 end
 
 function plot_data(args)
@@ -349,6 +355,7 @@ function load_normalised_data(args)
     return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
 end
 
-generate_data(args)
+# generate_data(args)
+generate_data_skewed(args)
 # plot_data(args)
 
