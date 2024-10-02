@@ -152,13 +152,10 @@ fname = "results/micro-service.csv"
 
 g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
 include("method-circa.jl")
-CSV.write(fname, df, header=!isfile(fname), append=true)
+
+g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+include("method-siren.jl")
 
 g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
 include("method-circa.jl")
-CSV.write(fname, df, header=!isfile(fname), append=true)
-
-g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
-include("method-circa.jl")
-CSV.write(fname, df, header=!isfile(fname), append=true)
 

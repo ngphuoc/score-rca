@@ -83,4 +83,5 @@ for k=1:d-1
 end
 
 println(df);
+CSV.write(fname, df, header=!isfile(fname), append=true)
 
