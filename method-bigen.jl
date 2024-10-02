@@ -1,13 +1,14 @@
 @info "#-- 1. fit linear bayesnet"
 
 @≥ x, xa, ε, εa args.to_device.()
-
-bn = copy_linear_dag(g)
+bn = copy_bayesian_dag(g)
 g.cpds
 bn.cpds
 Distributions.fit!(bn, x)
 
 @info "#-- 2. define residual function as outlier scores"
+
+μx = forward_1step(bn, x)
 
 function get_residual(bn, x)
     μx = forward_1step(bn, x)
@@ -57,7 +58,6 @@ anomaly_measure = abs.(get_residual(bn, xa))  # anomaly_measure
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
-
 gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 
@@ -79,9 +79,9 @@ for k=1:d-1
     ndcg_ranking = ndcg_score(gt_value', anomaly_measure'; k)
     ndcg_manual = ndcg_score(gt_manual', anomaly_measure'; k)
     @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "CIRCA", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
+    push!(df, [args.n_nodes, args.n_anomaly_nodes, "BIGEN", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
 
 println(df);
-CSV.write(fname, df, header=!isfile(fname), append=true)
 
+CSV.write(fname, df, header=!isfile(fname), append=true)

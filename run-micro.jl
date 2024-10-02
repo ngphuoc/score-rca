@@ -62,13 +62,19 @@ function micro_service_dag()
     A = @> adjacency_matrix(g) Matrix{Bool}
     for j = 1:d
         if sum(A[:, j]) == 0  # root
-            cpd = RootCPD(nodes[j], Gamma(1, 2))
+            cpd = RootCPD(nodes[j], Gamma(2, 2))
             push!(dag, cpd)
         else  # inner node/leaf
             ii = findall(A[:, j])
             parents = nodes[ii]
             a = randn(length(parents))
-            cpd = LinearCPD(nodes[j], parents, a, Gamma(1, 2))
+            # cpd = LinearCPD(nodes[j], parents, a, Gamma(2, 2))
+            pa_size, hidden = length(parents), 100
+            mlp = Chain(
+                        Dense(pa_size => hidden, activation, bias=false),
+                        Dense(hidden => 1, bias=false),
+                       ) |> f64
+            cpd = MlpCPD(nodes[j], parents, mlp, Gamma(2, 2))
             push!(dag, cpd)
         end
     end
@@ -131,6 +137,23 @@ function create_observed_latency_data(unobserved_intrinsic_latencies, nodes; w_a
     df[!, nodes]
 end
 
+function micro_service_data_v1(; args)
+    bn, nodes = micro_service_dag()
+    ε = unobserved_intrinsic_latencies_normal(args.n_samples)
+    x = create_observed_latency_data(ε, nodes)
+    εa = unobserved_intrinsic_latencies_anomalous(args.n_anomaly_samples)
+    xa = create_observed_latency_data(εa, nodes)
+    anomaly_nodes = indexin([Symbol("Caching Service")], nodes)
+    X = @> Array(x)' Array
+    Distributions.fit!(bn, X)
+    @assert Symbol.(names(x)) == nodes
+    target_node = Symbol("Website")
+    ε = DataFrame(ε)[!, nodes]
+    εa = DataFrame(εa)[!, nodes]
+    @≥ x, ε, xa, εa Array.() transpose.()
+    bn, nodes, x, ε, xa, εa, anomaly_nodes
+end
+
 function micro_service_data(; args)
     bn, nodes = micro_service_dag()
     ε = unobserved_intrinsic_latencies_normal(args.n_samples)
@@ -147,15 +170,77 @@ function micro_service_data(; args)
     @≥ x, ε, xa, εa Array.() transpose.()
     bn, nodes, x, ε, xa, εa, anomaly_nodes
 end
-cf
-fname = "results/micro-service.csv"
 
-g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
-include("method-circa.jl")
+"""
+TODO? return data, noise, and ∇noise
+"""
+function draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args)
+    d = length(g.cpds)
+    #-- normal data
+    ε = sample_noise(g, args.n_samples)
+    x = forward(g, ε)
+
+    #-- perturbed data, 3σ
+    g3 = deepcopy(g)
+    for cpd = g3.cpds
+        if isempty(parents(cpd))  # perturb root nodes
+            cpd.d = scale3(cpd.d)
+        end
+    end
+    ε3 = sample_noise(g3, args.n_samples)
+    x3 = forward(g3, ε3)
+
+    #-- select anomaly nodes
+    ga = deepcopy(g)
+    anomaly_nodes = sample(1:d, n_anomaly_nodes, replace=false)
+    a = anomaly_nodes |> first
+    for a in anomaly_nodes
+        # ga.cpds[a].d = Uniform(3, 5)
+        cpd = ga.cpds[a]
+        cpd.d = scale3(cpd.d)
+    end
+
+    #-- anomaly data
+    εa = sample_noise(ga, 20args.n_anomaly_samples)
+    xa = forward(ga, εa)
+    εa
+    ds = [cpd.d for cpd in g.cpds]
+    za = @> zval.(ds, eachrow(εa)) hcats transpose
+    anomaly_nodes
+    z2 = za[anomaly_nodes, :]
+    @> abs.(z2) .> 3 minimum(dims=1) vec
+    ia = @> abs.(z2) .> 3 minimum(dims=1) vec findall
+    ia = ia[1:args.n_anomaly_samples]
+    εa = εa[:, ia]
+    xa = xa[:, ia]
+    y = x - ε
+    y3 = x3 - ε3
+    ya = xa - εa
+    return ε, x, y, ε3, x3, y3, εa, xa, ya, anomaly_nodes
+end
+
+n_anomaly_nodes = 1
+X = x
+μx, σx = @> X mean(dims=2), std(dims=2);
+normalise_x(x) = @. (x - μx) / σx
+scale_ε(ε) = @. ε / σx
+@≥ X, x, xa normalise_x.();
+@≥ ε, εa scale_ε.();
+
+fname = "results/micro-service-v5.csv"
 
 g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
 include("method-siren.jl")
 
 g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+include("method-bigen.jl")
+
+g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+include("method-causalrca.jl")
+
+g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
 include("method-circa.jl")
+
+g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+include("method-traversal.jl")
 

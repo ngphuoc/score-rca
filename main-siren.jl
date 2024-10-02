@@ -11,7 +11,6 @@ g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes = load_normalised
 
 @info "#-- 1. collapse data"
 
-
 @assert x ≈ y + ε
 z = x - y
 @≥ z vec transpose;
@@ -57,7 +56,7 @@ vx = abs.(dx)  # anomaly_measure
 
 @info "#-- 4. ground truth ranking and results"
 
-max_k = args.n_anomaly_nodes
+max_k = n_anomaly_nodes
 overall_max_k = max_k + 1
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 d = size(adjmat, 1)

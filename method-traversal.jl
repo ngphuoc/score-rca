@@ -1,20 +1,7 @@
-using Revise
-using Flux
-include("lib/utils.jl")
-include("denoising-score-matching.jl")
-include("plot-dsm.jl")
-include("data-rca.jl")
-
-const to_device = args.to_device
-
-g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
-B = @> g.dag adjacency_matrix Matrix{Bool}
-anomaly_nodes
 
 @info "#-- 1. fit linear bayesnet"
 
-@assert x ≈ y + ε
-@≥ x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx to_device.()
+@≥ x, xa, ε, εa args.to_device.()
 
 @info "#-- 2. define residual function as outlier scores"
 
@@ -152,20 +139,18 @@ for k=1:d-1
     ndcg_ranking = ndcg_score(gt_value', anomaly_measure'; k)
     ndcg_manual = ndcg_score(gt_manual', anomaly_measure'; k)
     @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "traversal", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
+    push!(df, [args.n_nodes, args.n_anomaly_nodes, "Traversal", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
 
 anomaly_measure = naive_measure(g, xa, x)
 k = 1
-for k=1:args.min_depth
+for k=1:d-1
     ndcg_ranking = ndcg_score(gt_value', anomaly_measure'; k)
     ndcg_manual = ndcg_score(gt_manual', anomaly_measure'; k)
     @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "naive", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
+    push!(df, [args.n_nodes, args.n_anomaly_nodes, "Naive", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
 
 println(df);
 
-fname = "results/random-graphs.csv"
 CSV.write(fname, df, header=!isfile(fname), append=true)
-

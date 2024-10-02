@@ -1,6 +1,21 @@
+using Flux, ShapML
+using Flux: Data
+include("./data-rca.jl")
+include("./lib/utils.jl")
+include("./denoising-score-matching.jl")
+include("./plot-dsm.jl")
+seed = 1
+
+const to_device = args.to_device
+
+g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
+
 @info "#-- 1. fit linear bayesnet"
 
-@≥ x, xa, ε, εa args.to_device.()
+@assert x ≈ y + ε
+z = x - y
+@≥ z vec transpose;
+@≥ z, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx to_device.()
 
 bn = copy_linear_dag(g)
 g.cpds
@@ -9,13 +24,26 @@ Distributions.fit!(bn, x)
 
 @info "#-- 2. define residual function as outlier scores"
 
-function get_residual(bn, x)
-    μx = forward_1step(bn, x)
-    x - μx
+function predict_function(bn, noise)
+    DataFrame(ŷ = forward_leaf(bn, Array(noise)'))
 end
 
-ε̂x = get_residual(bn, x)
-vx = abs.(ε̂x)  # anomaly_measure
+function inverse_noise(bn, x)
+    x - forward_1step(bn, x)
+end
+
+ε̂a = inverse_noise(bn, xa)
+explain = DataFrame(ε̂a', names(g))
+ε̂ = inverse_noise(bn, x)
+reference = DataFrame(ε̂', names(g))
+
+sample_size = 50  # Number of Monte Carlo samples.
+data_shap = ShapML.shap(; explain , reference , model=bn , predict_function , sample_size , seed ,)
+show(data_shap, allcols = true)
+m = nrow(explain)
+a = @> data_shap[!, :feature_name] reshape(m, :)
+anomaly_measure = @> data_shap[!, :shap_effect] reshape(m, :)
+anomaly_nodes
 
 @info "#-- 3. ground truth ranking and results"
 
@@ -50,13 +78,8 @@ gt_value = @> get_ε_rankings(εa, ∇εa) hcats
 @> gt_value mean(dims=2)
 anomaly_nodes
 
-μa = forward_1step(g, xa)
-ε̂a = xa - μa
-anomaly_measure = abs.(get_residual(bn, xa))  # anomaly_measure
-
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
-
 
 gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
@@ -75,13 +98,15 @@ df = DataFrame(
               )
 
 k = 1
-for k=1:d-1
-    ndcg_ranking = ndcg_score(gt_value', anomaly_measure'; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_measure'; k)
+for k=1:args.min_depth
+    ndcg_ranking = ndcg_score(gt_value', anomaly_measure; k)
+    ndcg_manual = ndcg_score(gt_manual', anomaly_measure; k)
     @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "CIRCA", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
+    push!(df, [args.n_nodes, args.n_anomaly_nodes, "Shapley", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
 
 println(df);
+
+fname = "results/random-graphs.csv"
 CSV.write(fname, df, header=!isfile(fname), append=true)
 
