@@ -1,5 +1,7 @@
 using Graphs, BayesNets, Flux, PythonCall
 include("lib/utils.jl")
+include("bayesnets-extra.jl")
+include("bayesnets-fit.jl")
 using Parameters: @unpack
 @unpack truncexpon, halfnorm = pyimport("scipy.stats")
 @unpack random = pyimport("numpy")
@@ -68,27 +70,7 @@ function micro_service_dag()
             push!(dag, cpd)
         end
     end
-    return dag
-end
-
-function create_observed_latency_data(unobserved_intrinsic_latencies; w_auth_api = 1, w_cus_prod = 1)
-    observed_latencies = Dict()
-    observed_latencies["Product DB"] = unobserved_intrinsic_latencies["Product DB"]
-    observed_latencies["Customer DB"] = unobserved_intrinsic_latencies["Customer DB"]
-    observed_latencies["Order DB"] = unobserved_intrinsic_latencies["Order DB"]
-    observed_latencies["Shipping Cost Service"] = unobserved_intrinsic_latencies["Shipping Cost Service"]
-    observed_latencies["Caching Service"] = PyArray(random.choice([0, 1], size=(length(observed_latencies["Product DB"]),), p=[.5, .5])) .* observed_latencies["Product DB"] .+ unobserved_intrinsic_latencies["Caching Service"]
-    observed_latencies["Product Service"] = max.(observed_latencies["Shipping Cost Service"], observed_latencies["Caching Service"], w_cus_prod .* observed_latencies["Customer DB"]) .+ unobserved_intrinsic_latencies["Product Service"]
-    observed_latencies["Auth Service"] = observed_latencies["Customer DB"] .+ unobserved_intrinsic_latencies["Auth Service"]
-    observed_latencies["Order Service"] = observed_latencies["Order DB"] .+ unobserved_intrinsic_latencies["Order Service"]
-    observed_latencies["API"] = observed_latencies["Product Service"] \
-                                .+ observed_latencies["Customer DB"] \
-                                .+ w_auth_api .* observed_latencies["Auth Service"] \
-                                .+ observed_latencies["Order Service"] \
-                                .+ unobserved_intrinsic_latencies["API"]
-    observed_latencies["www"] = observed_latencies["API"] .+ observed_latencies["Auth Service"] .+ unobserved_intrinsic_latencies["www"]
-    observed_latencies["Website"] = observed_latencies["www"] .+ unobserved_intrinsic_latencies["Website"]
-    DataFrame(observed_latencies)
+    return dag, nodes
 end
 
 function unobserved_intrinsic_latencies_normal(num_samples)
@@ -126,14 +108,37 @@ function unobserved_intrinsic_latencies_anomalous(num_samples)
     fmap(Array ∘ PyArray, d)
 end
 
+function create_observed_latency_data(unobserved_intrinsic_latencies, nodes; w_auth_api = 1, w_cus_prod = 1)
+    observed_latencies = Dict()
+    observed_latencies["Product DB"] = unobserved_intrinsic_latencies["Product DB"]
+    observed_latencies["Customer DB"] = unobserved_intrinsic_latencies["Customer DB"]
+    observed_latencies["Order DB"] = unobserved_intrinsic_latencies["Order DB"]
+    observed_latencies["Shipping Cost Service"] = unobserved_intrinsic_latencies["Shipping Cost Service"]
+    observed_latencies["Caching Service"] = PyArray(random.choice([0, 1], size=(length(observed_latencies["Product DB"]),), p=[.5, .5])) .* observed_latencies["Product DB"] .+ unobserved_intrinsic_latencies["Caching Service"]
+    observed_latencies["Product Service"] = max.(observed_latencies["Shipping Cost Service"], observed_latencies["Caching Service"], w_cus_prod .* observed_latencies["Customer DB"]) .+ unobserved_intrinsic_latencies["Product Service"]
+    observed_latencies["Auth Service"] = observed_latencies["Customer DB"] .+ unobserved_intrinsic_latencies["Auth Service"]
+    observed_latencies["Order Service"] = observed_latencies["Order DB"] .+ unobserved_intrinsic_latencies["Order Service"]
+    observed_latencies["API"] = observed_latencies["Product Service"] \
+                                .+ observed_latencies["Customer DB"] \
+                                .+ w_auth_api .* observed_latencies["Auth Service"] \
+                                .+ observed_latencies["Order Service"] \
+                                .+ unobserved_intrinsic_latencies["API"]
+    observed_latencies["www"] = observed_latencies["API"] .+ observed_latencies["Auth Service"] .+ unobserved_intrinsic_latencies["www"]
+    observed_latencies["Website"] = observed_latencies["www"] .+ unobserved_intrinsic_latencies["Website"]
+    df = DataFrame(observed_latencies)
+    df[!, nodes]
+end
+
 function micro_service_data(n_samples)
+    bn, nodes = micro_service_dag()
     normal_noise = unobserved_intrinsic_latencies_normal(n_samples)
-    normal_data = create_observed_latency_data(normal_noise)
-    causal_model = get_micro_service_dag()
-    gcm.fit(causal_model, normal_data)
-    target_node = "Website"
-    ordered_nodes = networkx.topological_sort(causal_model.graph)
-    return (causal_model, target_node, ordered_nodes, normal_data, normal_noise)
+    normal_data = create_observed_latency_data(normal_noise, nodes)
+    names(normal_data)
+    X = @> Array(normal_data)' Array
+    Distributions.fit!(bn, X)
+    @assert Symbol.(names(normal_data)) == nodes
+    target_node = Symbol("Website")
+    return (bn, target_node, nodes, normal_data, normal_noise)
 end
 
 unobserved_intrinsic_latencies = unobserved_intrinsic_latencies_normal(10000)
