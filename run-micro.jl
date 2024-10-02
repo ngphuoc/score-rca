@@ -1,3 +1,4 @@
+using Flux: Data
 using Graphs, BayesNets, Flux, PythonCall
 using Parameters: @unpack
 @unpack truncexpon, halfnorm = pyimport("scipy.stats")
@@ -136,17 +137,28 @@ function micro_service_data(; args)
     x = create_observed_latency_data(ε, nodes)
     εa = unobserved_intrinsic_latencies_anomalous(args.n_anomaly_samples)
     xa = create_observed_latency_data(εa, nodes)
-    anomaly_nodes = findfirst(==(Symbol("Caching Service")), nodes)
+    anomaly_nodes = indexin([Symbol("Caching Service")], nodes)
     X = @> Array(x)' Array
     Distributions.fit!(bn, X)
     @assert Symbol.(names(x)) == nodes
     target_node = Symbol("Website")
+    ε = DataFrame(ε)[!, nodes]
+    εa = DataFrame(εa)[!, nodes]
+    @≥ x, ε, xa, εa Array.() transpose.()
     bn, nodes, x, ε, xa, εa, anomaly_nodes
 end
+cf
+fname = "results/micro-service.csv"
 
-bn, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+include("method-circa.jl")
+CSV.write(fname, df, header=!isfile(fname), append=true)
 
-#-- 2. non-linear FCMs, and 2 more scenarios from micro hrelc
+g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+include("method-circa.jl")
+CSV.write(fname, df, header=!isfile(fname), append=true)
 
-#-- 3. runs
+g, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
+include("method-circa.jl")
+CSV.write(fname, df, header=!isfile(fname), append=true)
 
