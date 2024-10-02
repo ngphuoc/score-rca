@@ -1,6 +1,6 @@
 using Revise
 using DataFrames, Distributions, BayesNets, CSV, Tables
-using BayesNets: plot, name
+using BayesNets: name
 using DataFrames: index
 using Graphs, GraphPlot
 using Revise

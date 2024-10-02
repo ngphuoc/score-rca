@@ -1,10 +1,11 @@
 using Graphs, BayesNets, Flux, PythonCall
-include("lib/utils.jl")
-include("bayesnets-extra.jl")
-include("bayesnets-fit.jl")
 using Parameters: @unpack
 @unpack truncexpon, halfnorm = pyimport("scipy.stats")
 @unpack random = pyimport("numpy")
+include("lib/utils.jl")
+include("bayesnets-extra.jl")
+include("bayesnets-fit.jl")
+include("data-rca.jl")
 
 #-- 1. dag, linear model, and noises
 
@@ -114,7 +115,7 @@ function create_observed_latency_data(unobserved_intrinsic_latencies, nodes; w_a
     observed_latencies["Customer DB"] = unobserved_intrinsic_latencies["Customer DB"]
     observed_latencies["Order DB"] = unobserved_intrinsic_latencies["Order DB"]
     observed_latencies["Shipping Cost Service"] = unobserved_intrinsic_latencies["Shipping Cost Service"]
-    observed_latencies["Caching Service"] = PyArray(random.choice([0, 1], size=(length(observed_latencies["Product DB"]),), p=[.5, .5])) .* observed_latencies["Product DB"] .+ unobserved_intrinsic_latencies["Caching Service"]
+    observed_latencies["Caching Service"] = rand([0, 1], length(observed_latencies["Product DB"])) .* observed_latencies["Product DB"] .+ unobserved_intrinsic_latencies["Caching Service"]
     observed_latencies["Product Service"] = max.(observed_latencies["Shipping Cost Service"], observed_latencies["Caching Service"], w_cus_prod .* observed_latencies["Customer DB"]) .+ unobserved_intrinsic_latencies["Product Service"]
     observed_latencies["Auth Service"] = observed_latencies["Customer DB"] .+ unobserved_intrinsic_latencies["Auth Service"]
     observed_latencies["Order Service"] = observed_latencies["Order DB"] .+ unobserved_intrinsic_latencies["Order Service"]
@@ -131,25 +132,19 @@ end
 
 function micro_service_data(; args)
     bn, nodes = micro_service_dag()
-    normal_noise = unobserved_intrinsic_latencies_normal(n_samples)
-    normal_data = create_observed_latency_data(normal_noise, nodes)
-
-    g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
-
-    unobserved_intrinsic_latencies = unobserved_intrinsic_latencies_normal(10000)
-    normal_data = create_observed_latency_data(unobserved_intrinsic_latencies_normal(10000))
-    outlier_data = create_observed_latency_data(unobserved_intrinsic_latencies_anomalous(1000))
-
-    names(normal_data)
-    X = @> Array(normal_data)' Array
+    ε = unobserved_intrinsic_latencies_normal(args.n_samples)
+    x = create_observed_latency_data(ε, nodes)
+    εa = unobserved_intrinsic_latencies_anomalous(args.n_anomaly_samples)
+    xa = create_observed_latency_data(εa, nodes)
+    anomaly_nodes = findfirst(==(Symbol("Caching Service")), nodes)
+    X = @> Array(x)' Array
     Distributions.fit!(bn, X)
-    @assert Symbol.(names(normal_data)) == nodes
+    @assert Symbol.(names(x)) == nodes
     target_node = Symbol("Website")
-    bn, target_node, nodes, normal_data, normal_noise
+    bn, nodes, x, ε, xa, εa, anomaly_nodes
 end
 
-bn, target_node, nodes, normal_data, normal_noise = micro_service_data(n_samples)
-
+bn, nodes, x, ε, xa, εa, anomaly_nodes = micro_service_data(; args);
 
 #-- 2. non-linear FCMs, and 2 more scenarios from micro hrelc
 
