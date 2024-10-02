@@ -129,21 +129,27 @@ function create_observed_latency_data(unobserved_intrinsic_latencies, nodes; w_a
     df[!, nodes]
 end
 
-function micro_service_data(n_samples)
+function micro_service_data(; args)
     bn, nodes = micro_service_dag()
     normal_noise = unobserved_intrinsic_latencies_normal(n_samples)
     normal_data = create_observed_latency_data(normal_noise, nodes)
+
+    g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
+
+    unobserved_intrinsic_latencies = unobserved_intrinsic_latencies_normal(10000)
+    normal_data = create_observed_latency_data(unobserved_intrinsic_latencies_normal(10000))
+    outlier_data = create_observed_latency_data(unobserved_intrinsic_latencies_anomalous(1000))
+
     names(normal_data)
     X = @> Array(normal_data)' Array
     Distributions.fit!(bn, X)
     @assert Symbol.(names(normal_data)) == nodes
     target_node = Symbol("Website")
-    return (bn, target_node, nodes, normal_data, normal_noise)
+    bn, target_node, nodes, normal_data, normal_noise
 end
 
-unobserved_intrinsic_latencies = unobserved_intrinsic_latencies_normal(10000)
-normal_data = create_observed_latency_data(unobserved_intrinsic_latencies_normal(10000))
-outlier_data = create_observed_latency_data(unobserved_intrinsic_latencies_anomalous(1000))
+bn, target_node, nodes, normal_data, normal_noise = micro_service_data(n_samples)
+
 
 #-- 2. non-linear FCMs, and 2 more scenarios from micro hrelc
 

@@ -7,14 +7,14 @@ include("data-rca.jl")
 
 const to_device = args.to_device
 
-g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
+g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
 B = @> g.dag adjacency_matrix Matrix{Bool}
 anomaly_nodes
 
 @info "#-- 1. fit linear bayesnet"
 
 @assert x ≈ y + ε
-@≥ x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx to_device.()
+@≥ x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx to_device.()
 
 @info "#-- 2. define residual function as outlier scores"
 

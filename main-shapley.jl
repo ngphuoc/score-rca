@@ -8,14 +8,14 @@ seed = 1
 
 const to_device = args.to_device
 
-g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
+g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
 
 @info "#-- 1. fit linear bayesnet"
 
 @assert x ≈ y + ε
 z = x - y
 @≥ z vec transpose;
-@≥ z, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx to_device.()
+@≥ z, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx to_device.()
 
 bn = copy_linear_dag(g)
 g.cpds
