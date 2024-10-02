@@ -29,10 +29,11 @@ for d in groupby(df, :method)
         push!(means, round.(mean(dk[!, :ndcg_manual]), digits=3))
         push!(stds, round.(std(dk[!, :ndcg_manual]), digits=3))
     end
-    push!(rs, [uppercasefirst(d[1, :method]),
-               means,
-               stds,
-              ]
+    method = uppercasefirst(d[1, :method])
+    if method == "DSM"
+        method = "$method (ours)"
+    end
+    push!(rs, [method, means, stds, ]
          )
 end
 rs
@@ -49,4 +50,15 @@ for i = 1:nrow(rs)
 end
 savefig("fig/ranking-k.pdf")
 
+
+d1 = SkewNormal(0, 3, 5)
+# samples = rand(d1, 10^6);
+# histogram(samples; density=true, bins=1000, size=(400, 300))
+xx = range(-5.0, stop=20.0, length=1000)
+plot(xx, pdf.(d1, xx), lab="normal operation noise", size=(400, 300))
+a = rand(Normal(-4, 1), 10)
+b = rand(Normal(15, 3), 10)
+scatter!(a, zero(a) .+ 1e-3, lab="short tail outliers", markersize=5)
+scatter!(b, zero(b) .+ 1e-3, lab="long tail outliers", markersize=5)
+savefig("fig/skewnormal.pdf")
 
