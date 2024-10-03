@@ -73,6 +73,6 @@ for k=1:d-1
     push!(df, [args.n_nodes, args.n_anomaly_nodes, "CIRCA", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
 
-print(df)
+println(df)
 
 append!(dfs, df)
