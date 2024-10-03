@@ -12,7 +12,7 @@ include("data-rca.jl")
 
 @info "#-- 0. load data"
 
-function generate_scalar_skewed(; args)
+function generate_linear_skewed(; args)
     g = BayesNet()
     ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
     d = MixtureModel(ds, [0.7, 0.3])
@@ -32,7 +32,7 @@ function generate_scalar_skewed(; args)
     # xa = εa[ya]
     # plot(xs, ys, lab="pdf")
     # scatter!(xa, fill(1e-2, length(xa)), markersize=3, lab="outlier")
-    # savefig("fig/scalar.png")
+    # savefig("fig/linear.png")
     nodes = names(g)
     anomaly_nodes = [1]
     x, xa = ε, εa
@@ -65,10 +65,10 @@ function get_ε_rankings(εa, ∇εa)
     return scores
 end
 
-g, nodes, x, ε, xa, εa, anomaly_nodes, μx, σx, ya = generate_scalar_skewed(; args)
+g, nodes, x, ε, xa, εa, anomaly_nodes, μx, σx, ya = generate_linear_skewed(; args)
 n_anomaly_nodes = 1
 
-fname = "results/random-scalar-v2.csv"
+fname = "results/random-linear-v2.csv"
 rm(fname, force=true)
 
 dfs = DataFrame(
