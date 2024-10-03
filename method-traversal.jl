@@ -122,16 +122,7 @@ gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 
 @info "#-- 4. save results"
 
-df = DataFrame(
-               n_nodes = Int[],
-               n_anomaly_nodes = Int[],
-               method = String[],
-               noise_dist  = String[],
-               data_id = Int[],
-               ndcg_ranking = Float64[],
-               ndcg_manual = Float64[],
-               k = Int[],
-              )
+df = copy(dfs[1:0, :])
 
 anomaly_measure = traversal_measure(g, xa, x)
 k = 1
@@ -153,4 +144,4 @@ end
 
 println(df);
 
-CSV.write(fname, df, header=!isfile(fname), append=true)
+append!(dfs, df)

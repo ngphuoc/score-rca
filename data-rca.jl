@@ -144,13 +144,13 @@ function Base.getindex(bn::BayesNet, node::Symbol)
     bn.cpds[bn.name_to_index[node]]
 end
 
-function scale3(d::MixedDist)
+function scale3(d::MixedDist, s=3)
     MixedDist(scale3.(d.ds))
 end
 
-function scale3(d)
+function scale3(d, s=3)
     μ, σ = Distributions.params(d)
-    typeof(d)(μ, 3σ)
+    typeof(d)(μ, s * σ)
 end
 
 """

@@ -39,7 +39,7 @@ end
 
 function train_dsm(dnet, X; args, ε=1f-5)
     loader = DataLoader((X,); args.batchsize, shuffle=true)
-    (x,) = @> loader first to_device
+    (x,) = @> loader first args.to_device
     d = size(x, 1)
     batchsize = size(x)[end]
     t = rand!(similar(x, batchsize)) .* (1f0 - ε) .+ ε  # same t for j and paj
@@ -51,7 +51,7 @@ function train_dsm(dnet, X; args, ε=1f-5)
     for epoch = 1:args.epochs
         total_loss = 0.0
         for (x,) = loader
-            @≥ x to_device
+            @≥ x args.to_device
             global loss, (grad,) = Flux.withgradient(dnet, ) do dnet
                 dsm_loss(dnet, x; args.σ_max)
             end

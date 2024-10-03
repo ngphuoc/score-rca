@@ -63,16 +63,7 @@ gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 
 @info "#-- 4. save results"
 
-df = DataFrame(
-               n_nodes = Int[],
-               n_anomaly_nodes = Int[],
-               method = String[],
-               noise_dist  = String[],
-               data_id = Int[],
-               ndcg_ranking = Float64[],
-               ndcg_manual = Float64[],
-               k = Int[],
-              )
+df = copy(dfs[1:0, :])
 
 k = 1
 for k=1:d-1
@@ -82,6 +73,6 @@ for k=1:d-1
     push!(df, [args.n_nodes, args.n_anomaly_nodes, "CIRCA", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
 end
 
-println(df);
-CSV.write(fname, df, header=!isfile(fname), append=true)
+print(df)
 
+append!(dfs, df)

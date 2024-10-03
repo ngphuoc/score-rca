@@ -84,7 +84,7 @@ xr = get_ref(xa, x);  # reference points
 μr = forward_1step_scaled(g, xr, μx, σx)
 ε̂r = xr - μr
 
-@≥ ε̂a, ε̂r to_device
+@≥ ε̂a, ε̂r args.to_device
 ∇xa = @> get_scores(dnet, ε̂a)
 anomaly_measure = abs.(∇xa)
 
@@ -97,16 +97,7 @@ ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
 
 @info "#-- 5. save results"
 
-df = DataFrame(
-               n_nodes = Int[],
-               n_anomaly_nodes = Int[],
-               method = String[],
-               noise_dist  = String[],
-               data_id = Int[],
-               ndcg_ranking = Float64[],
-               ndcg_manual = Float64[],
-               k = Int[],
-              )
+df = copy(dfs[1:0, :])
 
 k = 1
 anomaly_measure = abs.((ε̂a - ε̂r) .* ∇xa)'
@@ -123,5 +114,5 @@ end
 
 println(df);
 
-CSV.write(fname, df, header=!isfile(fname), append=true)
+append!(dfs, df)
 
