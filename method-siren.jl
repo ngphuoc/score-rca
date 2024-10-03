@@ -3,6 +3,12 @@ include("./plot-dsm.jl")
 
 @info "#-- 1. collapse data"
 
+# multiple siren models with different hyperparams
+# hidden size
+# fourier_scale
+# sigma
+# visualize 2d gradient field
+
 z = ε
 @≥ z vec transpose;
 @≥ z, x, xa, ε, εa args.to_device.()
@@ -18,6 +24,7 @@ net = ConditionalChain(
 dnet = @> DSM(args.σ_max, net) args.to_device
 dnet = train_dsm(dnet, z; args)
 
+# TODO: mixture of scales
 function get_score(dnet, x)
     t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
     # σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
@@ -42,39 +49,25 @@ end
 r = get_ref(xa, x)
 dx = get_scores(dnet, x)
 dr = get_scores(dnet, r)
-
 vx = abs.(dx)  # anomaly_measure
 
 @info "#-- 4. ground truth ranking and results"
+# to multiply with ya
+# raw ya vs. scaling with gradient
 
 max_k = n_anomaly_nodes
 overall_max_k = max_k + 1
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 d = size(adjmat, 1)
 ii = @> adjmat eachcol findall.()
-function get_ε_rankings(εa, ∇εa)
-    @assert size(εa, 1) == d
-    i = 1
-    scores = Vector{Float64}[]  # 1 score vector for each outlier
-    batchsize = size(εa, 2)
-    for i = 1:batchsize
-        tmp = Dict(j => ∇εa[j, i] * εa[j, i] for j = 1:d)
-        ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]  # used
-        score = zeros(d)
-        for q in 1:max_k
-            iq = findfirst(==(ranking[q]), 1:d)
-            score[iq] = overall_max_k - q
-        end
-        push!(scores, score)
-    end
-    return scores
-end
 
 # TODO: recheck gt ranking scores
 ∇εa, = Zygote.gradient(εa, ) do εa
     @> forward_leaf(g, εa, ii) sum
 end
-gt_value = @> get_ε_rankings(εa, ∇εa) hcats
+
+gt_value = @> get_ε_rankings(ya, ∇εa) hcats
+gt_pvalue = @> ya .* ∇εa
 @> gt_value mean(dims=2)
 anomaly_nodes
 
@@ -93,23 +86,25 @@ using PythonCall
 
 gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
-ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
+# ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
 
 @info "#-- 5. save results"
 
 df = copy(dfs[1:0, :])
 
 k = 1
-anomaly_measure = abs.((ε̂a - ε̂r) .* ∇xa)'
+anomaly_measure = abs.((ε̂a - ε̂r) .* ∇xa)
+@≥ gt_value, gt_manual, gt_pvalue, anomaly_measure repeat.(outer=(2, 1))
 # a = anomaly_measure
 # @≥ a reshape(:, 5, 4)
 # i = @> a std(dims=3) squeeze(3) argmax(dims=2) vec
 # a[i, :]
-for k=1:d-1
-    ndcg_ranking = ndcg_score(gt_value', anomaly_measure; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_measure; k)
-    @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
+for k=1:d
+    ndcg_ranking = ndcg_score(gt_value', anomaly_measure'; k)
+    ndcg_manual = ndcg_score(gt_manual', anomaly_measure'; k)
+    ndcg_pvalue = ndcg_score(gt_pvalue', anomaly_measure'; k)
+    @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.()
+    push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
 end
 
 println(df);
