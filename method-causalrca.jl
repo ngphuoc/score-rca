@@ -28,7 +28,7 @@ data_shap = ShapML.shap(; explain , reference , model=bn , predict_function , sa
 show(data_shap, allcols = true)
 m = nrow(explain)
 a = @> data_shap[!, :feature_name] reshape(m, :)
-anomaly_measure = @> data_shap[!, :shap_effect] reshape(m, :)
+anomaly_measure = @> data_shap[!, :shap_effect] reshape(m, :) transpose
 anomaly_nodes
 
 @info "#-- 3. ground truth ranking and results"
@@ -61,6 +61,7 @@ end
     @> forward_leaf(g, εa, ii) sum
 end
 gt_value = @> get_ε_rankings(εa, ∇εa) hcats
+gt_pvalue = @> ya .* ∇εa abs.()
 @> gt_value mean(dims=2)
 anomaly_nodes
 
@@ -75,13 +76,15 @@ gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 df = copy(dfs[1:0, :])
 
 k = 1
-for k=1:d-1
-    ndcg_ranking = ndcg_score(gt_value', anomaly_measure; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_measure; k)
-    @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "Causal RCA", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
+for k=1:d
+    ndcg_ranking = ndcg_score(gt_value', anomaly_measure'; k)
+    ndcg_manual = ndcg_score(gt_manual', anomaly_measure'; k)
+    ndcg_pvalue = ndcg_score(gt_pvalue', anomaly_measure'; k)
+    @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.()
+    push!(df, [args.n_nodes, args.n_anomaly_nodes, "Causal RCA", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
 end
 
-println(df);
+println(df)
 
 append!(dfs, df)
+

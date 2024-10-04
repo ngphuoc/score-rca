@@ -13,17 +13,31 @@ include("data-rca.jl")
 @info "#-- 0. load data"
 
 function generate_linear_skewed(; args)
+    #-- Normal FCMs
     g = BayesNet()
-    ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
+    ds = map((d, s) -> d(0, s), rand([Normal, Normal], 2), rand(0.1:0.1:1, 2))
+    # root
     d = MixtureModel(ds, [0.7, 0.3])
     cpd = RootCPD(:X1, d)
     push!(g, cpd)
-    ε = rand(g, 300)
-    #-- anomaly data
-    da = MixtureModel(scale3.(d.components), d.prior)
-    g.cpds[1].d = da
-    εa = rand(g, 300)
-    @≥ ε, εa Array.() transpose.()
+    # leaf
+    linear = Dense(1 => 1, bias=false) |> f64
+    cpd = MlpCPD(:X2, [:X1], linear, deepcopy(d))
+    push!(g, cpd)
+    adjacency_matrix(g.dag)
+
+    #-- Outlier FCMs
+    # anomaly :X1
+    ga = deepcopy(g)
+    da = MixtureModel(scale3.(d.components, 5), d.prior)
+    ga.cpds[1].d = da
+
+    #-- sampling
+    ε = sample_noise(g, 300)
+    εa = sample_noise(ga, 300)
+    x = forward(g, ε)
+    xa = forward(ga, εa)
+    # @≥ ε, εa Array.() transpose.()
     ds = [cpd.d for cpd in g.cpds]
     za = @> pval.(ds, eachrow(εa)) hcats transpose
     ya = 1 .- za
@@ -93,8 +107,9 @@ include("method-siren.jl")
 
 # include("method-traversal.jl")
 
-# dfs[!, :ndcg_manual] = round.(dfs[!, :ndcg_manual], digits=3)
-# dfs[!, :ndcg_ranking] = round.(dfs[!, :ndcg_ranking], digits=3)
+dfs[!, :manual] = round.(dfs[!,  :manual], digits=3)
+dfs[!, :ranking] = round.(dfs[!, :ranking], digits=3)
+dfs[!, :score] = round.(dfs[!, :score], digits=3)
 
-# CSV.write(fname, dfs, header=!isfile(fname), append=true)
+CSV.write(fname, dfs, header=!isfile(fname), append=true)
 

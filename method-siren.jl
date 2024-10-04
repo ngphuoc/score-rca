@@ -15,14 +15,17 @@ z = ε
 
 @info "#-- 2. train score function on data with mean removed"
 
-H, fourier_scale = args.hidden_dim, args.fourier_scale
-net = ConditionalChain(
-                 Parallel(.+, Dense(1, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-                 Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-                 Dense(H, 1),
-                )
-dnet = @> DSM(args.σ_max, net) args.to_device
-dnet = train_dsm(dnet, z; args)
+σ_max = 2std(εa)
+fourier_scale = 2σ_max
+
+hidden_dim = 50
+dnet = train_dsm(DSM(
+                     σ_max,
+                     ConditionalChain(
+                                      Parallel(.+, Dense(1, hidden_dim), Chain(RandomFourierFeatures(hidden_dim, fourier_scale), Dense(hidden_dim, hidden_dim))), swish,
+                                      Dense(hidden_dim, 1),
+                                     )
+                    ), z; args)
 
 # TODO: mixture of scales
 function get_score(dnet, x)
@@ -38,13 +41,19 @@ dx = get_scores(dnet, x)
 
 @info "#-- 3. reference points and outlier scores"
 
-
 function get_ref(x, r)
     dist_xr = pairwise(Euclidean(), x, r)  # correct
     _, j = @> findmin(dist_xr, dims=2)
     @≥ j getindex.(2) vec
     r[:, j]
 end
+
+function langevine_ref(dnet, init_x)
+    time_steps, Δt = setup_sampler(init_x)
+    ref_x = Euler_Maruyama_sampler(dnet, init_x, time_steps, Δt)
+    return ref_x
+end
+
 
 r = get_ref(xa, x)
 dx = get_scores(dnet, x)
@@ -67,7 +76,7 @@ ii = @> adjmat eachcol findall.()
 end
 
 gt_value = @> get_ε_rankings(ya, ∇εa) hcats
-gt_pvalue = @> ya .* ∇εa
+gt_pvalue = @> ya .* ∇εa abs.()
 @> gt_value mean(dims=2)
 anomaly_nodes
 

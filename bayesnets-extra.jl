@@ -86,7 +86,6 @@ function forward(cpd::LocationCPD, x::AbstractArray{T}) where T
 end
 
 """ Forward the noises throught the bn following the dag topo-order
-TODO: more efficient implementation
 """
 function forward(bn::BayesNet, ε::AbstractMatrix{T}) where T
     ii = @> bn.dag adjacency_matrix Matrix{Bool} eachcol findall.()

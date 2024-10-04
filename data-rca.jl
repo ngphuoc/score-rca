@@ -46,10 +46,10 @@ args = @env begin
     activation=Flux.relu
     has_node_outliers = true  # node outlier setting
     #-- dsm
+    hidden_dim = 10  # hiddensize factor
     fourier_scale=10.0f0
     σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
     σ_min = 1f-3
-    hidden_dim = 10  # hiddensize factor
     save_path = "data/main-2d.bson"
     load_path = ""
     #-- training
