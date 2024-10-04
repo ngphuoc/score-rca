@@ -12,7 +12,7 @@ include("data-rca.jl")
 
 @info "#-- 0. load data"
 
-function generate_linear_skewed(; args)
+function generate_linear_skewed(n_nodes = 2; args)
     #-- Normal FCMs
     g = BayesNet()
     ds = map((d, s) -> d(0, s), rand([Normal, Normal], 2), rand(0.1:0.1:1, 2))
@@ -101,13 +101,13 @@ dfs = DataFrame(
 
 include("method-siren-many.jl")
 
-include("method-bigen.jl")
+# include("method-bigen.jl")
 
-include("method-causalrca.jl")
+# include("method-causalrca.jl")
 
-include("method-circa.jl")
+# include("method-circa.jl")
 
-include("method-traversal.jl")
+# include("method-traversal.jl")
 
 dfs[!, :manual] = round.(dfs[!,  :manual], digits=3)
 dfs[!, :ranking] = round.(dfs[!, :ranking], digits=3)

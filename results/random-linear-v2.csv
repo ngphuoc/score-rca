@@ -1,17 +1,9 @@
 n_nodes,n_anodes,method,noise_dist,data_id,ranking,manual,score,k
-15,2,SIREN-1,Normal,3,0.223,0.777,0.28,1
-15,2,SIREN-1,Normal,3,0.713,0.918,0.746,2
-15,2,SIREN-2,Normal,3,0.23,0.77,0.286,1
-15,2,SIREN-2,Normal,3,0.716,0.915,0.748,2
-15,2,SIREN-3,Normal,3,0.23,0.77,0.286,1
-15,2,SIREN-3,Normal,3,0.716,0.915,0.748,2
-15,2,BIGEN,Normal,3,0.533,0.853,0.211,1
-15,2,BIGEN,Normal,3,0.828,0.946,0.722,2
-15,2,Causal RCA,Normal,3,0.81,0.43,0.601,1
-15,2,Causal RCA,Normal,3,0.93,0.79,0.859,2
-15,2,CIRCA,Normal,3,0.533,0.853,0.211,1
-15,2,CIRCA,Normal,3,0.828,0.946,0.722,2
-15,2,Traversal,Normal,3,0.493,0.26,0.754,1
-15,2,Traversal,Normal,3,0.813,0.727,0.912,2
-15,2,Naive,Normal,3,0.457,0.15,0.857,1
-15,2,Naive,Normal,3,0.799,0.686,0.949,2
+15,2,SIREN-1,Normal,3,0.637,0.797,0.943,1
+15,2,SIREN-1,Normal,3,0.866,0.925,0.986,2
+15,2,SIREN-2,Normal,3,0.59,0.777,0.934,1
+15,2,SIREN-2,Normal,3,0.849,0.918,0.983,2
+15,2,SIREN-3,Normal,3,0.59,0.783,0.933,1
+15,2,SIREN-3,Normal,3,0.849,0.92,0.983,2
+15,2,SIREN-4,Normal,3,0.597,0.823,0.937,1
+15,2,SIREN-4,Normal,3,0.851,0.935,0.984,2

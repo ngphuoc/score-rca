@@ -45,8 +45,8 @@ function get_ref(x, r)
     r[:, j]
 end
 
-function langevine_ref(dnet, init_x)
-    time_steps, Δt = setup_sampler(init_x; args)
+function langevine_ref(dnet, init_x; opt)
+    time_steps, Δt = setup_sampler(init_x; opt.n_steps, opt.init_time)
     r, ∇s = Euler_Maruyama_sampler(dnet, init_x, time_steps, Δt, σ_max)
     @≥ r reshape(size(εa))
     @≥ ∇s reshape(size(εa)..., :)
@@ -73,15 +73,6 @@ gt_pvalue = @> ya .* ∇εa abs.()
 @> gt_value mean(dims=2)
 anomaly_nodes
 
-# μa = forward_1step_scaled(g, xa, μx, σx)
-# ε̂a = xa - μa
-# xr = get_ref(xa, x);  # reference points
-# μr = forward_1step_scaled(g, xr, μx, σx)
-# ε̂r = xr - μr
-ε̂a = εa
-init_ε = @> εa vec transpose Array
-ε̂r, ∇s = langevine_ref(dnet, init_ε)
-
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
@@ -91,43 +82,40 @@ gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 
 @info "#-- 5. save results"
 
-function siren_value(ε̂a, ε̂r, ∇s)
-    T = size(∇s)[end]
-    @> abs.(mean(∇s, dims=3) .* (ε̂a - ε̂r)) squeeze(3)
-end
-
-function siren_value2(ε̂a, ε̂r, ∇s)
-    T = size(∇s)[end]
-    @> abs.(mean(∇s[:, :, [1, T]], dims=3) .* (ε̂a - ε̂r)) squeeze(3)
-end
-
-function siren_value3(ε̂a, ε̂r, ∇s)
+function siren_value(ε̂a; opt)
+    init_ε = @> ε̂a vec transpose Array
+    ε̂r, ∇s = langevine_ref(dnet, init_ε; opt)
     T = size(∇s)[end]
     @> abs.(mean(∇s[:, :, [1, T÷2, T]], dims=3) .* (ε̂a - ε̂r)) squeeze(3)
 end
-
-value_funcs = [siren_value, siren_value2, siren_value3]
 
 if d == 1
     @≥ gt_value, gt_manual, gt_pvalue, anomaly_value repeat.(outer=(2, 1))
 end
 
-for siren_id = 1:length(value_funcs)
-    value_func = value_funcs[siren_id]
-    df = copy(dfs[1:0, :])
+options = [
+           (; init_time = 0.1, n_steps = 100, )
+           (; init_time = 0.1, n_steps = 100, )
+           (; init_time = 0.2, n_steps = 50, )
+           (; init_time = 0.2, n_steps = 50, )
+          ]
 
+for i = 1:length(options)
+    opt = options[i]
+    df = copy(dfs[1:0, :])
     k = 1
     # anomaly_value = abs.((∇a + ∇r) .* (ε̂a - ε̂r))
-    anomaly_value = value_func(ε̂a, ε̂r, ∇s)
+    anomaly_value = siren_value(ε̂a; opt)
     for k=1:d
         ndcg_ranking = ndcg_score(gt_value', anomaly_value'; k)
         ndcg_manual = ndcg_score(gt_manual', anomaly_value'; k)
         ndcg_pvalue = ndcg_score(gt_pvalue', anomaly_value'; k)
         @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.()
-        push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN-$siren_id", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
+        push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN-$i", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
     end
 
     println(df);
 
     append!(dfs, df)
 end
+
