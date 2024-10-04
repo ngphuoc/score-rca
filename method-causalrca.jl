@@ -25,7 +25,7 @@ reference = DataFrame(ε̂', names(g))
 
 sample_size = 50  # Number of Monte Carlo samples.
 data_shap = ShapML.shap(; explain , reference , model=bn , predict_function , sample_size , args.seed ,)
-show(data_shap, allcols = true)
+# show(data_shap, allcols = true)
 m = nrow(explain)
 a = @> data_shap[!, :feature_name] reshape(m, :)
 anomaly_measure = @> data_shap[!, :shap_effect] reshape(m, :) transpose

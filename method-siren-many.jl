@@ -101,23 +101,33 @@ function siren_value2(ε̂a, ε̂r, ∇s)
     @> abs.(mean(∇s[:, :, [1, T]], dims=3) .* (ε̂a - ε̂r)) squeeze(3)
 end
 
-df = copy(dfs[1:0, :])
+function siren_value3(ε̂a, ε̂r, ∇s)
+    T = size(∇s)[end]
+    @> abs.(mean(∇s[:, :, [1, T÷2, T]], dims=3) .* (ε̂a - ε̂r)) squeeze(3)
+end
 
-k = 1
-# anomaly_value = abs.((∇a + ∇r) .* (ε̂a - ε̂r))
-anomaly_value = siren_value(ε̂a, ε̂r, ∇s)
+value_funcs = [siren_value, siren_value2, siren_value3]
+
 if d == 1
     @≥ gt_value, gt_manual, gt_pvalue, anomaly_value repeat.(outer=(2, 1))
 end
-for k=1:d
-    ndcg_ranking = ndcg_score(gt_value', anomaly_value'; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_value'; k)
-    ndcg_pvalue = ndcg_score(gt_pvalue', anomaly_value'; k)
-    @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
+
+for siren_id = 1:length(value_funcs)
+    value_func = value_funcs[siren_id]
+    df = copy(dfs[1:0, :])
+
+    k = 1
+    # anomaly_value = abs.((∇a + ∇r) .* (ε̂a - ε̂r))
+    anomaly_value = value_func(ε̂a, ε̂r, ∇s)
+    for k=1:d
+        ndcg_ranking = ndcg_score(gt_value', anomaly_value'; k)
+        ndcg_manual = ndcg_score(gt_manual', anomaly_value'; k)
+        ndcg_pvalue = ndcg_score(gt_pvalue', anomaly_value'; k)
+        @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.()
+        push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN-$siren_id", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
+    end
+
+    println(df);
+
+    append!(dfs, df)
 end
-
-println(df);
-
-append!(dfs, df)
-

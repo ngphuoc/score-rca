@@ -97,15 +97,17 @@ dfs = DataFrame(
                k = Int[],
               )
 
-include("method-siren.jl")
+# include("method-siren.jl")
 
-# include("method-bigen.jl")
+include("method-siren-many.jl")
 
-# include("method-causalrca.jl")
+include("method-bigen.jl")
 
-# include("method-circa.jl")
+include("method-causalrca.jl")
 
-# include("method-traversal.jl")
+include("method-circa.jl")
+
+include("method-traversal.jl")
 
 dfs[!, :manual] = round.(dfs[!,  :manual], digits=3)
 dfs[!, :ranking] = round.(dfs[!, :ranking], digits=3)
