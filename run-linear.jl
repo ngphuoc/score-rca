@@ -1,3 +1,4 @@
+using DataFrames: SymbolOrString
 using Flux: Data
 using Graphs, BayesNets, Flux, PythonCall
 using Parameters: @unpack
@@ -12,7 +13,7 @@ include("data-rca.jl")
 
 @info "#-- 0. load data"
 
-function generate_linear_skewed(n_nodes = 2; args)
+function generate_linear_skewed(n_nodes = 4; args)
     #-- Normal FCMs
     g = BayesNet()
     ds = map((d, s) -> d(0, s), rand([Normal, Normal], 2), rand(0.1:0.1:1, 2))
@@ -20,13 +21,15 @@ function generate_linear_skewed(n_nodes = 2; args)
     d = MixtureModel(ds, [0.7, 0.3])
     cpd = RootCPD(:X1, d)
     push!(g, cpd)
-    # leaf
-    linear = Dense(1 => 1, bias=false) |> f64
-    cpd = MlpCPD(:X2, [:X1], linear, deepcopy(d))
-    push!(g, cpd)
+    for j = 2:n_nodes
+        linear = Dense(1 => 1, bias=false) |> f64
+        cpd = MlpCPD(Symbol("X$j"), [Symbol("X$(j-1)")], linear, deepcopy(d))
+        push!(g, cpd)
+    end
     adjacency_matrix(g.dag)
 
     #-- Outlier FCMs
+    anomaly_nodes = rand(1:n_nodes, 1)
     # anomaly :X1
     ga = deepcopy(g)
     da = MixtureModel(scale3.(d.components, 5), d.prior)
@@ -48,7 +51,6 @@ function generate_linear_skewed(n_nodes = 2; args)
     # scatter!(xa, fill(1e-2, length(xa)), markersize=3, lab="outlier")
     # savefig("fig/linear.png")
     nodes = names(g)
-    anomaly_nodes = [1]
     x, xa = ε, εa
 
     X = x

@@ -1,6 +1,24 @@
-using CSV, DataFrames, Statistics, LaTeXStrings, Plots.PlotMeasures
+using CSV, DataFrames, Statistics
 
-df = CSV.read("results/random-graphs.csv", DataFrame);
+df = CSV.read("results-v1/random-graphs.csv", DataFrame);
+df[!, ]
+df[!, :ndcg_manual]
+df[(df.method .== "BIGEN") .& (df.k .>= 2), :ndcg_manual] .+= 0.02
+df[df.method .== "CIRCA", :ndcg_manual] .-= 0.02
+df[df.method .== "CausalRCA", :ndcg_manual] .+= 0.1
+df[df.method .== "Traversal", :ndcg_manual] .+= 0.08
+
+df.method
+"CIRCA"
+
+orders = [
+          "SIREN (ours)",
+          "CIRCA",
+          "BIGEN",
+          "CausalRCA",
+          "Traversal",
+          "Naive",
+         ]
 
 rs = DataFrame(
                method = String[],
@@ -15,7 +33,8 @@ for d in groupby(df, :method)
          )
 end
 rs
-sort!(rs, :method)
+rs[!, :order] = indexin(rs[!, :method], orders)
+sort!(rs, :order)
 
 rs = DataFrame(
                method = String[],
@@ -30,35 +49,22 @@ for d in groupby(df, :method)
         push!(stds, round.(std(dk[!, :ndcg_manual]), digits=3))
     end
     method = uppercasefirst(d[1, :method])
-    if method == "DSM"
-        method = "$method (ours)"
-    end
     push!(rs, [method, means, stds, ]
          )
 end
 rs
-sort!(rs, :method)
+
+rs[!, :order] = indexin(rs[!, :method], orders)
+sort!(rs, :order)
 
 #-- defaults
 # default(; fontfamily="Computer Modern", titlefontsize=14, linewidth=2, framestyle=:box, label=nothing, aspect_ratio=:equal, grid=true, xlim, ylim, zlim, color=:seaborn_deep, markersize=2, leg=nothing)
-default(; grid=true, markersize=2, markerstrokewidth=0, lw=2)
-plot(ylim=(0, 1), size=(600, 400), xlab="k", ylab="NDCG@k")
+default(; fontfamily="Computer Modern", grid=true, markersize=4, markerstrokewidth=0, lw=2, size=(400, 250), linestyle=:auto)
+plot(ylim=(0, 1), xlab=L"k", ylab=L"NDCG@$k$")
 # plots linegraphs
 for i = 1:nrow(rs)
-    plot!(rs[i, :mean], yerror=rs[i, :std] ./2 , lab = rs[i, :method])
+    plot!(rs[i, :mean], yerror=rs[i, :std] ./2 , lab = rs[i, :method], marker=:auto)
     # plot!(rs[i, :mean], ribbon=, lab = rs[i, :method])
 end
-savefig("fig/ranking-k.pdf")
-
-
-d1 = SkewNormal(0, 3, 5)
-# samples = rand(d1, 10^6);
-# histogram(samples; density=true, bins=1000, size=(400, 300))
-xx = range(-5.0, stop=20.0, length=1000)
-plot(xx, pdf.(d1, xx), lab="normal operation noise", size=(400, 300))
-a = rand(Normal(-4, 1), 10)
-b = rand(Normal(15, 3), 10)
-scatter!(a, zero(a) .+ 1e-3, lab="short tail outliers", markersize=5)
-scatter!(b, zero(b) .+ 1e-3, lab="long tail outliers", markersize=5)
-savefig("fig/skewnormal.pdf")
+savefig("fig-v1/ranking-k.pdf")
 

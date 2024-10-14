@@ -232,7 +232,7 @@ function micro_service_data(; args)
     return g, nodes, x, ε, xa, εa, anomaly_nodes, μx, σx
 end
 
-fname = "results/micro-service-v2.csv"
+fname = "results/micro-service-v3.csv"
 rm(fname, force=true)
 
 dfs = DataFrame(
@@ -249,20 +249,20 @@ dfs = DataFrame(
 g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
 include("method-siren.jl")
 
-g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
-include("method-bigen.jl")
+# g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
+# include("method-bigen.jl")
 
-g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
-include("method-causalrca.jl")
+# g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
+# include("method-causalrca.jl")
 
-g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
-include("method-circa.jl")
+# g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
+# include("method-circa.jl")
 
-g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
-include("method-traversal.jl")
+# g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
+# include("method-traversal.jl")
 
-dfs[!, :ndcg_manual] = round.(dfs[!, :ndcg_manual], digits=3)
-dfs[!, :ndcg_ranking] = round.(dfs[!, :ndcg_ranking], digits=3)
+# dfs[!, :ndcg_manual] = round.(dfs[!, :ndcg_manual], digits=3)
+# dfs[!, :ndcg_ranking] = round.(dfs[!, :ndcg_ranking], digits=3)
 
-CSV.write(fname, dfs, header=!isfile(fname), append=true)
+# CSV.write(fname, dfs, header=!isfile(fname), append=true)
 

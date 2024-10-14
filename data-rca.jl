@@ -39,10 +39,10 @@ args = @env begin
     n_nodes = 15
     n_root_nodes = 1  # n_root_nodes
     n_anomaly_nodes = 2
-    n_samples = 500  # n observations
+    n_samples = 5000  # n observations
     hidden = 10
     anomaly_fraction = 0.1
-    n_anomaly_samples = 50  # n faulty observations
+    n_anomaly_samples = 500  # n faulty observations
     activation=Flux.relu
     has_node_outliers = true  # node outlier setting
     #-- dsm

@@ -10,10 +10,7 @@ include("./plot-dsm.jl")
 # visualize 2d gradient field
 
 z = ε
-@> ε mean(dims=2)
-@> ε std(dims=2)
-
-# @≥ z vec transpose;
+@≥ z vec transpose;
 @≥ z, x, xa, ε, εa args.to_device.()
 
 @info "#-- 2. train score function on data with mean removed"
@@ -25,8 +22,8 @@ hidden_dim = 50
 dnet = train_dsm(DSM(
                      σ_max,
                      ConditionalChain(
-                                      Parallel(.+, Dense(d, hidden_dim), Chain(RandomFourierFeatures(hidden_dim, fourier_scale), Dense(hidden_dim, hidden_dim))), swish,
-                                      Dense(hidden_dim, d),
+                                      Parallel(.+, Dense(1, hidden_dim), Chain(RandomFourierFeatures(hidden_dim, fourier_scale), Dense(hidden_dim, hidden_dim))), swish,
+                                      Dense(hidden_dim, 1),
                                      )
                     ), z; args)
 
