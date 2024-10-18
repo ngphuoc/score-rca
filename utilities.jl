@@ -1,5 +1,4 @@
 using LinearAlgebra
-using Images
 using Optimisers: Leaf
 
 ## model sizes

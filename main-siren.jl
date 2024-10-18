@@ -56,7 +56,7 @@ vx = abs.(dx)  # anomaly_measure
 
 @info "#-- 4. ground truth ranking and results"
 
-max_k = n_anomaly_nodes
+max_k = args.n_anomaly_nodes
 overall_max_k = max_k + 1
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 d = size(adjmat, 1)
@@ -133,5 +133,5 @@ end
 println(df);
 
 fname = "results/random-graphs.csv"
-CSV.write(fname, df, header=!isfile(fname), append=true)
+# CSV.write(fname, df, header=!isfile(fname), append=true)
 
