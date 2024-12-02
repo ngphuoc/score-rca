@@ -5,7 +5,7 @@ import Flux._big_show, Flux._show_children
 import NNlib: batched_mul
 using Revise
 using BSON, JSON, DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2, Dates, Flux, Optimisers, Plots, Printf, ProgressMeter, Random, Distances
-using Flux.Data: DataLoader
+using Flux: DataLoader
 using Flux: crossentropy
 using Optimisers: Optimisers, trainable
 using ColorSchemes
@@ -280,6 +280,24 @@ function generate_data_skewed(args)
     end
 end
 
+function generate_data_timeit(args)
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
+    rng = range(log(50), log(1000), length=30)
+    rng = round.(Int, exp.(rng))
+    for n_nodes in rng
+        for id = 1:5
+            ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
+            noise_dists = MixedDist(ds)
+            @info "generating " * data_path(noise_dists)
+            g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
+            ε, x, y, ε3, x3, y3, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g, n_anomaly_nodes; args);
+            @show anomaly_nodes
+            filepath = "data/data-timeit&nodes=$n_nodes&id=$id.bson"
+            BSON.@save filepath args g ε x y ε3 x3 y3 εa xa ya anomaly_nodes ds
+        end
+    end
+end
+
 function plot_data(args)
     @info "Loading " * data_path(args)
     BSON.@load data_path(args) g ε x y ε3 x3 y3 εa xa ya anomaly_nodes  # don't load args
@@ -345,5 +363,6 @@ end
 
 # generate_data(args)
 # generate_data_skewed(args)
+# generate_data_timeit(args)
 # plot_data(args)
 
