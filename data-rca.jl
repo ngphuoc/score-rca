@@ -306,6 +306,6 @@ function load_normalised_data(args)
     return g, x, x′, xa, y, y′, ya, ε, ε′, εa, μx, σx, anomaly_nodes
 end
 
-# generate_data(args)
+generate_data(args)
 # plot_data(args)
 
