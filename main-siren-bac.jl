@@ -40,7 +40,6 @@ dx = get_scores(dnet, x)
 
 @info "#-- 3. reference points and outlier scores"
 
-
 function get_ref(x, r)
     dist_xr = pairwise(Euclidean(), x, r)  # correct
     _, j = @> findmin(dist_xr, dims=2)

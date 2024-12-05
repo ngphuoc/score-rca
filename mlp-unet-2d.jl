@@ -1,7 +1,7 @@
 using MLDatasets
 using Flux
 using Flux: @functor, chunk, params
-using Flux.Data: DataLoader
+using Flux: DataLoader
 using Parameters: @with_kw
 using BSON
 using CUDA

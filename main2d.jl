@@ -1,4 +1,4 @@
-include("./data2d.jl")
+include("data2d.jl")
 
 struct Diffusion2d{T}
     σ_max::Float32
@@ -17,7 +17,7 @@ function Diffusion2d(; args)
                              Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
                              Dense(H, 2),
                             )
-    return Diffusion2d(σ_max, model)
+    return Diffusion2d(args.σ_max, model)
 end
 
 function (net::Diffusion2d)(x::AbstractMatrix{T}, t) where {T}
@@ -109,12 +109,12 @@ t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for 
 J = @> net(x, t)
 @≥ J, x cpu.()
 
-# x, y = eachrow(x);
-# u, v = eachrow(0.2J);
-# pl_gradient = scatter(x, y, markersize=0, lw=0, color=:white);
+x, y = eachrow(x);
+u, v = eachrow(0.2J);
+pl_gradient = scatter(x, y, markersize=0, lw=0, color=:white);
 # arrow0!.(x, y, u, v; as=0.2, lw=1.0);
 mesh, scores = @> x', J' Array.()
-plot_score_field(mesh, scores, width=0.002, vis_path="fig/score-field.png")
+# plot_score_field(mesh, scores, width=0.002, vis_path="fig/score-field.png")
 
-# @> Plots.plot(pl_data, pl_sm_data, pl_gradient; xlim, ylim, size=(1000, 800)) savefig("fig/spiral-2d.png")
+@> Plots.plot(pl_data, pl_sm_data, pl_gradient; xlim, ylim, size=(1000, 800)) savefig("fig/spiral-2d.png")
 

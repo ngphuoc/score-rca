@@ -8,6 +8,8 @@ include("./plot-dsm.jl")
 const to_device = args.to_device
 
 g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes = load_normalised_data(args);
+g.cpds[1]
+g.cpds[2]
 
 @info "#-- 1. collapse data"
 
@@ -39,7 +41,6 @@ dz = get_score(dnet, z)
 dx = get_scores(dnet, x)
 
 @info "#-- 3. reference points and outlier scores"
-
 
 function get_ref(x, r)
     dist_xr = pairwise(Euclidean(), x, r)  # correct

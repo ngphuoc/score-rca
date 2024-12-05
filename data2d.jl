@@ -1,30 +1,25 @@
 import Base.show, Base.eltype
 import Flux._big_show, Flux._show_children
 import NNlib: batched_mul
-using BSON, JSON
-using DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2
-using Dates
-using Flux
-using Flux.Data: DataLoader
-using Flux: crossentropy
-using Optimisers
+using Parameters: @unpack
+using BSON, JSON, DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2, Dates, Flux, Optimisers
+using Flux: DataLoader, crossentropy
 using Optimisers: Optimisers, trainable
-using Plots
-using Printf
-using ProgressMeter
-using Random
+using Plots, Printf, ProgressMeter, Random
+include("lib/utils.jl")
+include("lib/graph.jl")
+include("lib/outlier.jl")
 
-include("./imports.jl")
 include("./lib/diffusion.jl")
 include("./lib/graph.jl")
-include("./lib/nn.jl")
+# include("./lib/nn.jl")
 include("./lib/nnlib.jl")
 include("./lib/utils.jl")
 include("./mlp-unet-2d.jl")
 include("./random-graph-datasets.jl")
-include("./rca-data.jl")
+# include("./rca-data.jl")
 include("./rca.jl")
-include("datasets.jl")
+# include("datasets.jl")
 include("utilities.jl")
 include("models/embed.jl")
 include("models/ConditionalChain.jl")
@@ -35,7 +30,7 @@ include("models/UNetFixed.jl")
 include("models/UNetConditioned.jl")
 
 args = @env begin
-    activation=swish
+    activation=Flux.swish
     batchsize = 100
     d_hid = 16
     decay = 1e-5  # weight decay parameter for AdamW
@@ -45,8 +40,8 @@ args = @env begin
     hidden_dim = 300  # hiddensize factor
     hidden_dims = [300, 300]
     input_dim = 2
-    save_path = ""
-    load_path = "data/main-2d.bson"
+    save_path = "data/main-2d.bson"
+    load_path = ""
     lr_regressor = 1e-3  # learning rate
     lr_unet = 1e-3  # learning rate
     min_depth = 2  # minimum depth of ancestors for the target node

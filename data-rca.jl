@@ -1,17 +1,30 @@
-using MultivariateStats, Distributions, StatsPlots, Plots, LaTeXStrings, Plots.PlotMeasures
-using Plots: plot
-import Base.show, Base.eltype
-import Flux._big_show, Flux._show_children
-import NNlib: batched_mul
+# Package management
 using Revise
-using BSON, JSON, DataFrames, Distributions, BayesNets, CSV, Tables, FileIO, JLD2, Dates, Flux, Optimisers, Plots, Printf, ProgressMeter, Random, Distances
-using Flux: DataLoader
-using Flux: crossentropy
-using Optimisers: Optimisers, trainable
+
+# Data manipulation and file I/O
+using DataFrames, CSV, Tables, BSON, JLD2, JSON, FileIO
+
+# Date and time utilities
+using Dates
+
+# Statistical analysis and machine learning
+using Distributions, BayesNets, MultivariateStats, Flux, Optimisers, NNlib
+using Flux: DataLoader, crossentropy
+import Flux: _big_show, _show_children
+
+# Visualization
+using StatsPlots, Plots
+using Plots: plot, palette
+using LaTeXStrings, Plots.PlotMeasures
 using ColorSchemes
+
+# Utilities
+using Random, Printf, ProgressMeter, Distances
 using Glob
-color_pallete = Plots.palette(:Paired_10)
-colors = color_pallete.colors
+
+# Custom configurations
+color_palette = palette(:Paired_10)
+colors = color_palette.colors
 
 include("./lib/utils.jl")
 include("./lib/graph.jl")
@@ -33,7 +46,7 @@ include("models/UNetConditioned.jl")
 
 args = @env begin
     #-- graph
-    data_id = 3  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
+    data_id = 1  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     noise_dist = "Normal"  # Normal	Laplace	Student-t	Gumbel	Fréchet	Weibull
     min_depth = 5  # minimum depth of ancestors for the target node
     n_nodes = 15
@@ -338,7 +351,9 @@ y: output mean: x ≈ y + ε
 return g, normal, perturb, and outlier data
 """
 function load_normalised_data(args)
-    fpath = glob("data/*.bson")[args.data_id]
+    fpaths = glob("data/*.bson")
+    @assert length(fpaths) > 0
+    fpath = fpaths[args.data_id]
     @info "Loading " * fpath
     BSON.@load fpath g ε x y ε3 x3 y3 εa xa ya anomaly_nodes ds  # don't load args
     @> x mean, std
