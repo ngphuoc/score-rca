@@ -113,7 +113,7 @@ export
 
 
 include("bayes_nets.jl")
-include("io.jl")
+# include("io.jl")
 include("sampling.jl")
 include("gibbs.jl")
 include("learning.jl")

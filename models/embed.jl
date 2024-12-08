@@ -13,7 +13,7 @@ struct SinusoidalPositionEmbedding{W<:AbstractArray}
     weight::W
 end
 
-Flux.@functor SinusoidalPositionEmbedding
+@functor SinusoidalPositionEmbedding
 Flux.trainable(emb::SinusoidalPositionEmbedding) = (;) # not trainable
 
 function SinusoidalPositionEmbedding(in::Int, out::Int)

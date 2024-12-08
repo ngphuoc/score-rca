@@ -7,7 +7,7 @@ struct MultiheadAttention{Q<:Conv,O<:Conv}
     to_out::O
 end
 
-Flux.@functor MultiheadAttention (to_qkv, to_out,)
+@functor MultiheadAttention (to_qkv, to_out,)
 
 """
     MultiheadAttention(nhead::Int, dim_model::Int)

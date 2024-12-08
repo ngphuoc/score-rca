@@ -31,7 +31,7 @@ struct ConvEmbed{E,C<:Conv,N,A} <: AbstractParallel
     activation::A
 end
 
-Flux.@functor ConvEmbed
+@functor ConvEmbed
 
 function ConvEmbed(channels::Pair{<:Integer,<:Integer}, emb_channels::Int; groups::Int=8, activation=swish)
     out = channels[2]
@@ -89,7 +89,7 @@ struct ResBlock{I<:ConvEmbed,O,S} <: AbstractParallel
     skip_transform::S
 end
 
-Flux.@functor ResBlock
+@functor ResBlock
 
 function ResBlock(channels::Pair{<:Integer,<:Integer}, emb_channels::Int; groups::Int=8, activation=swish)
     out_ch = channels[2]

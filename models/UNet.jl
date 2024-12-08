@@ -55,7 +55,7 @@ struct UNet{E,C<:ConditionalChain}
     num_levels::Int
 end
 
-Flux.@functor UNet (time_embedding, chain,)
+@functor UNet (time_embedding, chain,)
 
 function UNet(
     in_channels::Int,

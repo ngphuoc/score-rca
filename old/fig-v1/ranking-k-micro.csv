@@ -1,0 +1,7 @@
+method,mean,std,order
+SIREN (ours),0.901,0.042,1
+CIRCA,0.679,0.073,2
+BIGEN,0.886,0.036,3
+CausalRCA,0.922,0.029,4
+Traversal,0.214,0.116,5
+Naive,0.335,0.133,6

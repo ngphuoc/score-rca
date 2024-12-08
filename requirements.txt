@@ -1,8 +1,0 @@
-networkx
-numpy
-pandas
-pybaseball
-scipy
-seaborn
-scikit-learn
-matplotlib

@@ -1,0 +1,61 @@
+n_nodes,n_anomaly_nodes,method,noise_dist,data_id,ndcg_ranking,ndcg_manual,k
+15,2,SIREN (ours),Normal,3,0.82,0.0,1
+15,2,SIREN (ours),Normal,3,0.815,0.031,2
+15,2,SIREN (ours),Normal,3,0.846,0.068,3
+15,2,SIREN (ours),Normal,3,0.865,0.126,4
+15,2,SIREN (ours),Normal,3,0.871,0.178,5
+15,2,SIREN (ours),Normal,3,0.887,0.226,6
+15,2,SIREN (ours),Normal,3,0.895,0.275,7
+15,2,SIREN (ours),Normal,3,0.9,0.302,8
+15,2,SIREN (ours),Normal,3,0.902,0.346,9
+15,2,SIREN (ours),Normal,3,0.902,0.407,10
+15,2,BIGEN,Normal,3,0.82,0.0,1
+15,2,BIGEN,Normal,3,0.815,0.031,2
+15,2,BIGEN,Normal,3,0.846,0.068,3
+15,2,BIGEN,Normal,3,0.865,0.126,4
+15,2,BIGEN,Normal,3,0.871,0.178,5
+15,2,BIGEN,Normal,3,0.887,0.226,6
+15,2,BIGEN,Normal,3,0.895,0.275,7
+15,2,BIGEN,Normal,3,0.9,0.302,8
+15,2,BIGEN,Normal,3,0.902,0.346,9
+15,2,BIGEN,Normal,3,0.902,0.407,10
+15,2,CausalRCA,Normal,3,0.98,0.0,1
+15,2,CausalRCA,Normal,3,0.879,0.101,2
+15,2,CausalRCA,Normal,3,0.898,0.223,3
+15,2,CausalRCA,Normal,3,0.908,0.302,4
+15,2,CausalRCA,Normal,3,0.908,0.34,5
+15,2,CausalRCA,Normal,3,0.908,0.375,6
+15,2,CausalRCA,Normal,3,0.916,0.392,7
+15,2,CausalRCA,Normal,3,0.932,0.434,8
+15,2,CausalRCA,Normal,3,0.944,0.479,9
+15,2,CausalRCA,Normal,3,0.946,0.503,10
+15,2,CIRCA,Normal,3,0.53,0.0,1
+15,2,CIRCA,Normal,3,0.547,0.101,2
+15,2,CIRCA,Normal,3,0.596,0.125,3
+15,2,CIRCA,Normal,3,0.639,0.173,4
+15,2,CIRCA,Normal,3,0.659,0.22,5
+15,2,CIRCA,Normal,3,0.678,0.29,6
+15,2,CIRCA,Normal,3,0.701,0.331,7
+15,2,CIRCA,Normal,3,0.718,0.377,8
+15,2,CIRCA,Normal,3,0.725,0.41,9
+15,2,CIRCA,Normal,3,0.738,0.425,10
+15,2,Traversal,Normal,3,0.048,0.5,1
+15,2,Traversal,Normal,3,0.067,0.442,2
+15,2,Traversal,Normal,3,0.089,0.537,3
+15,2,Traversal,Normal,3,0.115,0.685,4
+15,2,Traversal,Normal,3,0.148,0.737,5
+15,2,Traversal,Normal,3,0.207,0.741,6
+15,2,Traversal,Normal,3,0.229,0.746,7
+15,2,Traversal,Normal,3,0.29,0.746,8
+15,2,Traversal,Normal,3,0.333,0.749,9
+15,2,Traversal,Normal,3,0.381,0.749,10
+15,2,Naive,Normal,3,0.1,0.2,1
+15,2,Naive,Normal,3,0.162,0.2,2
+15,2,Naive,Normal,3,0.2,0.255,3
+15,2,Naive,Normal,3,0.292,0.303,4
+15,2,Naive,Normal,3,0.33,0.364,5
+15,2,Naive,Normal,3,0.368,0.417,6
+15,2,Naive,Normal,3,0.391,0.458,7
+15,2,Naive,Normal,3,0.425,0.508,8
+15,2,Naive,Normal,3,0.452,0.549,9
+15,2,Naive,Normal,3,0.476,0.559,10

@@ -19,7 +19,7 @@ The first input can therefore be conditioned on the other inputs.
 struct ConditionalChain{T<:Union{Tuple,NamedTuple}} <: AbstractParallel
     layers::T
 end
-Flux.@functor ConditionalChain
+@functor ConditionalChain
 
 ConditionalChain(xs...) = ConditionalChain(xs)
 function ConditionalChain(; kw...)
@@ -70,7 +70,7 @@ struct ConditionalSkipConnection{T,F} <: AbstractParallel
     connection::F
 end
 
-Flux.@functor ConditionalSkipConnection
+@functor ConditionalSkipConnection
 
 function (skip::ConditionalSkipConnection)(x, ys...)
     skip.connection(skip.layers(x, ys...), x)

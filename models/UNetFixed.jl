@@ -40,7 +40,7 @@ struct UNetFixed{E,D<:Tuple,M<:Tuple,U<:Tuple}
     ups::U
 end
 
-Flux.@functor UNetFixed
+@functor UNetFixed
 
 function UNetFixed(
     in_channels::Int,

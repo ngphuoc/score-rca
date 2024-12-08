@@ -60,7 +60,7 @@ struct UNetConditioned{E1,E2,F,C<:ConditionalChain}
     num_levels::Int
 end
 
-Flux.@functor UNetConditioned (time_embedding, class_embedding, chain,)
+@functor UNetConditioned (time_embedding, class_embedding, chain,)
 
 function UNetConditioned(
     in_channels::Int,

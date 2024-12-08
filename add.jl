@@ -1,4 +1,4 @@
-]
-add BenchmarkTools BSON ChainRules ChainRulesCore CSV CUDA DataFrames Distributions EndpointRanges FileIO Flux Functors GraphPlot Graphs ImageFiltering Images JLD2 LinearAlgebra MacroTools MLDatasets MLUtils NNlib OneHotArrays Optimisers Parameters ParameterSchedulers Plots ProgressMeter PythonCall Random Revise Tables Zygote ColorSchemes ColorBrewer
 
+]
+add BenchmarkTools BSON ChainRules ChainRulesCore ColorBrewer ColorSchemes CSV DataFrames Distributions EndpointRanges FileIO Flux Functors GraphPlot Graphs JLD2 LinearAlgebra MacroTools MLUtils NNlib OneHotArrays Optimisers Parameters Plots ProgressMeter Random Revise TimerOutputs Zygote
 
