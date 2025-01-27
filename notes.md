@@ -1,0 +1,1 @@
+- Lux enzyme GPU works for Dense
