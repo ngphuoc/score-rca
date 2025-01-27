@@ -8,7 +8,7 @@
 # add ArgCheck CairoMakie ConcreteStructs Comonicon DataAugmentation DataDeps FileIO ImageCore JLD2 Lux LuxCUDA MLUtils Optimisers ParameterSchedulers ProgressBars Random Setfield StableRNGs Statistics Zygote
 
 using ArgCheck, CairoMakie, ConcreteStructs, Comonicon, DataAugmentation, DataDeps, FileIO, ImageCore, JLD2, Lux, LuxCUDA, MLUtils, Optimisers, ParameterSchedulers, ProgressBars, Random, Setfield, StableRNGs, Statistics, Zygote
-
+using CUDA
 using TensorBoardLogger: TBLogger, log_value, log_images
 
 # ## Model Definition

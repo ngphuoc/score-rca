@@ -191,7 +191,7 @@ end
 # ## Training the Model
 
 function main(;
-        maxiters::Int=10_000, n_train_samples::Int=100_000, batchsize::Int=128,
+        maxiters::Int=10_000, n_train_samples::Int=100_000, batchsize::Int=32,
         n_transforms::Int=6, hidden_dims::Int=16, n_layers::Int=4,
         lr::Float64=0.0004, noise::Float64=0.06
 )
