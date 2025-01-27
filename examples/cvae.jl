@@ -1,18 +1,7 @@
-
-# # [Convolutional VAE for MNIST using Reactant](@id Convolutional-VAE-Tutorial)
-
-# Convolutional variational autoencoder (CVAE) implementation in MLX using MNIST. This is
-# based on the [CVAE implementation in MLX](https://github.com/ml-explore/mlx-examples/blob/main/cvae/).
-
 using Lux, Reactant, MLDatasets, Random, Statistics, Enzyme, MLUtils, DataAugmentation, ConcreteStructs, OneHotArrays, ImageShow, Images, Printf, Optimisers
 
 const xdev = reactant_device(; force=true)
 const cdev = cpu_device()
-
-# ## Model Definition
-
-# First we will define the encoder.It maps the input to a normal distribution in latent
-# space and sample a latent vector from that distribution.
 
 function cvae_encoder(
         rng=Random.default_rng(); num_latent_dims::Int,
@@ -57,8 +46,6 @@ function cvae_encoder(
         @return z, μ, logσ²
     end
 end
-
-# Similarly we define the decoder.
 
 function cvae_decoder(; num_latent_dims::Int, image_shape::Dims{3}, max_num_filters::Int)
     flattened_dim = prod(image_shape[1:2] .÷ 8) * max_num_filters
@@ -116,8 +103,6 @@ function decode(cvae::CVAE, z, ps, st)
     return x_rec, (; decoder=st_dec, st.encoder)
 end
 
-# ## Loading MNIST
-
 @concrete struct TensorDataset
     dataset
     transform
@@ -142,10 +127,6 @@ function loadmnist(batchsize, image_size::Dims{2})
 
     return trainloader
 end
-
-# ## Helper Functions
-
-# Generate an Image Grid from a list of images
 
 function create_image_grid(imgs::AbstractArray, grid_rows::Int, grid_cols::Int)
     total_images = grid_rows * grid_cols
@@ -209,8 +190,6 @@ function reconstruct_images(model, ps, st, X)
     recon = recon |> cpu_device()
     return create_image_grid(recon, 8, size(X, ndims(X)) ÷ 8)
 end
-
-# ## Training the Model
 
 function main(; batchsize=128, image_size=(64, 64), num_latent_dims=8, max_num_filters=64,
         seed=0, epochs=50, weight_decay=1e-5, learning_rate=1e-3, num_samples=batchsize)
@@ -281,7 +260,5 @@ end
 
 img = main()
 nothing #hide
-
-# ---
 
 img #hide
