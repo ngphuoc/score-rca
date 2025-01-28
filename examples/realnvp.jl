@@ -6,8 +6,9 @@
 # [RealNVP implementation in MLX](https://github.com/ml-explore/mlx-examples/blob/main/normalizing_flow/).
 
 using Lux, Reactant, Random, Statistics, Enzyme, MLUtils, ConcreteStructs, Printf, Optimisers, CairoMakie
-const xdev = reactant_device(; force=true)
-const cdev = cpu_device()
+using Metal
+const dev = reactant_device(; force=true)  # 82s
+# const dev = cpu_device()  # 82s
 
 # ## Define & Load the Moons Dataset
 
@@ -200,10 +201,10 @@ function main(;
     Random.seed!(rng, 0)
 
     dataloader = load_moons_dataloader(rng, Float32, n_train_samples; batchsize, noise) |>
-                 xdev |> Iterators.cycle
+                 dev |> Iterators.cycle
 
     model = RealNVP(; n_transforms, dist_dims=2, hidden_dims, n_layers)
-    ps, st = Lux.setup(rng, model) |> xdev
+    ps, st = Lux.setup(rng, model) |> dev
     opt = Adam(lr)
 
     train_state = Training.TrainState(model, ps, st, opt)

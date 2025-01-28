@@ -1,4 +1,4 @@
-include("spiral.jl")
+include("spiral-data.jl")
 
 struct Diffusion2d{T}
     σ_max::Float32
@@ -135,3 +135,4 @@ combined_fig
 
 # Save the combined figure
 save("fig/combined-spiral-2d.png", combined_fig)
+

@@ -1,4 +1,4 @@
-using Functors, Flux, BSON, Dates, JLD2, Random, Statistics, JSON, DataFrames, Distributions, BayesNets, CSV, FileIO, Optimisers, Printf, ProgressMeter
+using Functors, Flux, BSON, Dates, JLD2, Random, Statistics, JSON, DataFrames, Distributions, CSV, FileIO, Optimisers, Printf, ProgressMeter
 using Flux: chunk, params, DataLoader, crossentropy
 using Parameters: @with_kw, @unpack
 using Logging: with_logger
@@ -80,3 +80,4 @@ function spirals_2d()
     (x,) = @> loader first gpu
     d = size(x, 1)
 end
+
