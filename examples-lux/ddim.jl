@@ -297,8 +297,32 @@ end
 
 # ## Entry Point for our code
 
+epochs::Int=100
+image_size::Int=128
+batchsize::Int=32
+learning_rate_start::Float32=1.0f-3
+learning_rate_end::Float32=1.0f-5
+weight_decay::Float32=1.0f-6
+checkpoint_interval::Int=25
+expt_dir=tempname(@__DIR__)
+diffusion_steps::Int=80
+generate_image_interval::Int=5
+# model hyper params
+channels::Vector{Int}=[32, 64, 96, 128]
+block_depth::Int=2
+min_freq::Float32=1.0f0
+max_freq::Float32=1000.0f0
+embedding_dims::Int=32
+min_signal_rate::Float32=0.02f0
+max_signal_rate::Float32=0.95f0
+generate_image_seed::Int=12
+# inference specific
+inference_mode::Bool=false
+saved_model_path=nothing
+generate_n_images::Int=12
+
 Comonicon.@main function main(; epochs::Int=100, image_size::Int=128,
-        batchsize::Int=128, learning_rate_start::Float32=1.0f-3,
+        batchsize::Int=32, learning_rate_start::Float32=1.0f-3,
         learning_rate_end::Float32=1.0f-5, weight_decay::Float32=1.0f-6,
         checkpoint_interval::Int=25, expt_dir=tempname(@__DIR__),
         diffusion_steps::Int=80, generate_image_interval::Int=5,
@@ -308,6 +332,7 @@ Comonicon.@main function main(; epochs::Int=100, image_size::Int=128,
         max_signal_rate::Float32=0.95f0, generate_image_seed::Int=12,
         # inference specific
         inference_mode::Bool=false, saved_model_path=nothing, generate_n_images::Int=12)
+
     isdir(expt_dir) || mkpath(expt_dir)
 
     @info "Experiment directory: $(expt_dir)"
@@ -325,9 +350,12 @@ Comonicon.@main function main(; epochs::Int=100, image_size::Int=128,
     @info "Using device: $gdev"
 
     @info "Building model"
-    model = ddim(rng, (image_size, image_size); channels, block_depth, min_freq,
-        max_freq, embedding_dims, min_signal_rate, max_signal_rate)
+    model = ddim(rng, (image_size, image_size); channels, block_depth, min_freq, max_freq, embedding_dims, min_signal_rate, max_signal_rate)
     ps, st = Lux.setup(rng, model) |> gdev
+
+    # Get the number of parameters
+    num_params = Lux.parameterlength(ps)
+    println("Number of model parameters: ", num_params)  # 1950627
 
     if inference_mode
         @argcheck saved_model_path!==nothing "`saved_model_path` must be specified for inference"

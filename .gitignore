@@ -1,3 +1,4 @@
+*.bson
 jl_*
 run
 *.jld2

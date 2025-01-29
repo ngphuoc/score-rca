@@ -103,7 +103,7 @@ struct2dict(s) = struct2dict(Dict, s)
 # arguments for the `train` function
 args = @env_const begin
     η = 1e-4                                        # learning rate
-    batch_size = 32                                 # batch size
+    batch_size = 16                                 # batch size
     epochs = 50                                     # number of epochs
     save_every = 2
     seed = 1                                        # random seed
@@ -130,6 +130,7 @@ function train()
     # load MNIST images
     loader = get_data(args.batch_size)
     model = UNet(1) |> dev
+    sum(length, Flux.params(model))  # 1115296
     opt_state = Flux.setup(Adam(), model);
 
     !ispath(args.save_path) && mkpath(args.save_path)
@@ -186,4 +187,45 @@ end
 # if abspath(PROGRAM_FILE) == @__FILE__
     train()
 # end
+
+function test()
+    args.seed > 0 && Random.seed!(args.seed)
+
+    # GPU config
+    if args.cuda && CUDA.has_cuda()
+        dev = gpu
+        @info "Training on GPU"
+    else
+        dev = cpu
+        @info "Training on CPU"
+    end
+
+    # load MNIST images
+    loader = get_data(args.batch_size)
+    model = UNet(1) |> dev
+    sum(length, Flux.params(model))  # 1115296
+    opt_state = Flux.setup(Adam(), model);
+
+    !ispath(args.save_path) && mkpath(args.save_path)
+
+    # logging by TensorBoard.jl
+    if args.tblogger
+        tblogger = TBLogger(args.save_path, tb_overwrite)
+    end
+
+    # Training
+    epoch = 1
+    x, _ = loader |> first |> dev
+    score_matching_loss(model, x)
+    grads, = Flux.gradient(model) do model
+        score_matching_loss(model, x)
+    end
+
+    # load model
+    epoch = args.epochs
+    model_path = joinpath(args.save_path, "diffusion-mnist&batchsize=16&eta=0.0001&epoch=50(50).bson")
+    model = cpu(model)
+    BSON.@load model_path model
+    @info "Model saved: $(model_path)"
+end
 
