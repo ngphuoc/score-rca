@@ -1,7 +1,8 @@
 using MLDatasets
 using Flux
-using Flux: @functor, chunk, params
-using Flux.Data: DataLoader
+using Flux: chunk, params
+using Functors: @functor
+using MLUtils
 using Parameters: @with_kw
 using BSON
 using CUDA
@@ -11,29 +12,17 @@ using ProgressMeter: Progress, next!
 using TensorBoardLogger: TBLogger, tb_overwrite
 using Random
 using Statistics
-using Optimisers: Optimisers
 using Dates
 using JLD2
-
+include("./lib/utils.jl")
 include("./lib/diffusion.jl")
 
-"""
-Create a UNet architecture as a backbone to a diffusion model. \n
-# Notes
-Images stored in WHCN (width, height, channels, batch) order. \n
-In our case, MNIST comes in as (28, 28, 1, batch). \n
-# References
-paper-  https://arxiv.org/abs/1505.04597
-"""
 struct UNet
     layers::NamedTuple
 end
 
 @functor UNet
 
-"""
-User Facing API for UNet architecture.
-"""
 function UNet(c, channels=[32, 64, 128, 256], embed_dim=256, scale=30.0f0)
     k = 10  # number of classes
     bias = false
