@@ -1,7 +1,7 @@
 using MLDatasets
+using Functors: @functor
 using Flux
 using Flux: chunk, params
-using Functors: @functor
 using MLUtils
 using Parameters: @with_kw
 using BSON
@@ -14,6 +14,8 @@ using Random
 using Statistics
 using Dates
 using JLD2
+# include("../lib/utils.jl")
+# include("../lib/diffusion.jl")
 include("./lib/utils.jl")
 include("./lib/diffusion.jl")
 
@@ -30,36 +32,35 @@ function UNet(c, channels = [32, 64, 128, 256], embed_dim = 256, scale = 30.0f0)
         gaussfourierproj = RandomFourierFeatures(embed_dim, scale),
         linear = Dense(embed_dim, embed_dim, swish),
         # Encoding
-        conv1 = Conv((3, 3), c => channels[1], stride = 1, , pad=1; bias),
+        conv1 = Conv((3, 3), c => channels[1], stride = 1, pad = 1; bias),
         dense1 = Dense(embed_dim, channels[1]),
         gnorm1 = GroupNorm(channels[1], 4, swish),
-        conv2 = Conv((3, 3), channels[1] => channels[2], stride = 2, bias = false),
+        conv2 = Conv((3, 3), channels[1] => channels[2], stride = 2, pad = 1; bias),
         dense2 = Dense(embed_dim, channels[2]),
         gnorm2 = GroupNorm(channels[2], 32, swish),
-        conv3 = Conv((3, 3), channels[2] => channels[3], stride = 2, bias = false),
+        conv3 = Conv((3, 3), channels[2] => channels[3], stride = 2, pad = 1; bias),
         dense3 = Dense(embed_dim, channels[3]),
         gnorm3 = GroupNorm(channels[3], 32, swish),
-        conv4 = Conv((3, 3), channels[3] => channels[4], stride = 2, bias = false),
+        conv4 = Conv((3, 3), channels[3] => channels[4], stride = 2, pad = 1; bias),
         dense4 = Dense(embed_dim, channels[4]),
         gnorm4 = GroupNorm(channels[4], 32, swish),
         # Decoding
-        tconv4 = ConvTranspose((3, 3), channels[4] => channels[3], stride = 2, bias = false),
+        tconv4 = ConvTranspose((3, 3), channels[4] => channels[3], stride = 2, pad = 1; bias),
         dense5 = Dense(embed_dim, channels[3]),
         tgnorm4 = GroupNorm(channels[3], 32, swish),
-        tconv3 = ConvTranspose((3, 3), channels[3] + channels[3] => channels[2], pad = (0, -1, 0, -1), stride = 2, bias = false),
+        tconv3 = ConvTranspose((3, 3), channels[3] + channels[3] => channels[2], pad = (1, 0, 1, 0), stride = 2; bias),
         dense6 = Dense(embed_dim, channels[2]),
         tgnorm3 = GroupNorm(channels[2], 32, swish),
-        tconv2 = ConvTranspose((3, 3), channels[2] + channels[2] => channels[1], pad = (0, -1, 0, -1), stride = 2, bias = false),
+        tconv2 = ConvTranspose((3, 3), channels[2] + channels[2] => channels[1], pad = (1, 0, 1, 0), stride = 2; bias),
         dense7 = Dense(embed_dim, channels[1]),
         tgnorm2 = GroupNorm(channels[1], 32, swish),
-        tconv1 = ConvTranspose((3, 3), channels[1] + channels[1] => 1, stride = 1, bias = false),
+        tconv1 = ConvTranspose((3, 3), channels[1] + channels[1] => 1, stride = 1, pad = 1; bias),
     ))
 end
 
 function (model::UNet)(x, t)
     # Embedding
-    embed = model.layers.gaussfourierproj(t)
-    embed = model.layers.linear(embed)
+    embed = model.layers.linear(model.layers.gaussfourierproj(t))
     # Encoder
     h1 = model.layers.conv1(x);
     h1 = h1 .+ expand_dims(model.layers.dense1(embed), 2);
@@ -85,26 +86,7 @@ function (model::UNet)(x, t)
     h = model.layers.tgnorm2(h);
     h = model.layers.tconv1(cat(h, h1, dims = 3));
     # Scaling Factor;
-    h ./ expand_dims(marginal_prob_std(t), 3);
-end
-
-function model_loss(model, x, ϵ = 1.0f-5)
-    batch_size = size(x)[end]
-    # (batch) of random times to approximate 𝔼[⋅] wrt. 𝘪 ∼ 𝒰(0, 𝘛)
-    random_t = rand!(similar(x, batch_size)) .* (1.0f0 - ϵ) .+ ϵ
-    # (batch) of perturbations to approximate 𝔼[⋅] wrt. 𝘹(0) ∼ 𝒫₀(𝘹)
-    z = randn!(similar(x))
-    std = expand_dims(marginal_prob_std(random_t), 3)
-    # (batch) of perturbed 𝘹(𝘵)'s to approximate 𝔼 wrt. 𝘹(t) ∼ 𝒫₀ₜ(𝘹(𝘵)|𝘹(0))
-    perturbed_x = x + z .* std
-    # 𝘚₀(𝘹(𝘵), 𝘵)
-    x, t = perturbed_x, random_t
-    score = model(perturbed_x, random_t)
-    # mean over batches
-    mean(
-        # L₂ norm over WHC dimensions
-        sum((score .* std + z) .^ 2; dims = 1:(ndims(x)-1))
-    )
+    h ./ expand_dims(marginal_prob_std(t; σ_max), 3);
 end
 
 function get_data(batch_size)
@@ -119,68 +101,89 @@ end
 struct2dict(s) = struct2dict(Dict, s)
 
 # arguments for the `train` function
-@with_kw mutable struct Args
+args = @env_const begin
     η = 1e-4                                        # learning rate
     batch_size = 32                                 # batch size
     epochs = 50                                     # number of epochs
+    save_every = 2
     seed = 1                                        # random seed
     cuda = true                                    # use CPU
     verbose_freq = 10                               # logging for every verbose_freq iterations
     tblogger = true                                 # log training with tensorboard
     save_path = "output"                            # results path
     dryrun = false
+    σ_max = 25f0
 end
 
-# load hyperparamters
-args = Args()
-args.seed > 0 && Random.seed!(args.seed)
+function train()
+    args.seed > 0 && Random.seed!(args.seed)
 
-# GPU config
-if args.cuda && CUDA.has_cuda()
-    device = gpu
-    @info "Training on GPU"
-else
-    device = cpu
-    @info "Training on CPU"
-end
+    # GPU config
+    if args.cuda && CUDA.has_cuda()
+        dev = gpu
+        @info "Training on GPU"
+    else
+        dev = cpu
+        @info "Training on CPU"
+    end
 
-# load MNIST images
-loader = get_data(args.batch_size)
+    # load MNIST images
+    loader = get_data(args.batch_size)
+    model = UNet(1) |> dev
+    opt_state = Flux.setup(Adam(), model);
 
-model = UNet() |> device
-opt_state = Flux.setup(Adam(), model);
+    !ispath(args.save_path) && mkpath(args.save_path)
 
-!ispath(args.save_path) && mkpath(args.save_path)
+    # logging by TensorBoard.jl
+    if args.tblogger
+        tblogger = TBLogger(args.save_path, tb_overwrite)
+    end
 
-# logging by TensorBoard.jl
-if args.tblogger
-    tblogger = TBLogger(args.save_path, tb_overwrite)
-end
+    # # Training
+    # epoch = 1
+    # x, _ = loader |> first |> dev
+    # score_matching_loss(model, x)
+    # grads, = Flux.gradient(model) do model
+    #     score_matching_loss(model, x)
+    # end
 
-# Training
-train_steps = 0
-@info "Start Training, total $(args.epochs) epochs"
-for epoch = 1:args.epochs
-    @info "Epoch $(epoch)"
-    progress = Progress(length(loader))
+    train_steps = 0
+    @info "Start Training, total $(args.epochs) epochs"
+    for epoch = 1:args.epochs
+        @info "Epoch $(epoch)"
+        progress = Progress(length(loader))
 
-    for (x, _) = loader
-        global train_steps
-        x = device(x)
-        model_loss(model, x)
-        (loss, grads) = Flux.withgradient(model -> model_loss(model, x), model)
-        Flux.update!(opt_state, model, grads[1])
-        next!(progress; showvalues = [(:loss, loss)])
-
-        # logging with TensorBoard
-        if args.tblogger && train_steps % args.verbose_freq == 0
-            with_logger(tblogger) do
-                @info "train" loss = loss
+        for (x, _) = loader
+            x = dev(x)
+            loss, grads = Flux.withgradient(model) do model
+                score_matching_loss(model, x)
             end
+            Flux.update!(opt_state, model, grads[1])
+            next!(progress; showvalues = [(:loss, loss)])
+
+            # logging with TensorBoard
+            if args.tblogger && train_steps % args.verbose_freq == 0
+                with_logger(tblogger) do
+                    @info "train" loss = loss
+                end
+            end
+            train_steps += 1
+            args.dryrun && break
         end
-        train_steps += 1
         args.dryrun && break
     end
-    args.dryrun && break
+
+    # save model
+    epoch = args.epochs
+    model_str = "&batchsize=$(args.batch_size)&eta=$(args.η)&epoch=$epoch($(args.epochs))"
+    model_path = joinpath(args.save_path, "diffusion-mnist$model_str.bson")
+    let model = cpu(model), args = struct2dict(args)
+        BSON.@save model_path model args
+        @info "Model saved: $(model_path)"
+    end
 end
+
+# if abspath(PROGRAM_FILE) == @__FILE__
+    train()
+# end
 
