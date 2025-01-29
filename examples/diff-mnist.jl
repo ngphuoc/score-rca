@@ -23,46 +23,46 @@ function GaussianFourierProjection(embed_dim, scale)
     end
 end
 
-marginal_prob_std(t, sigma=25.0f0) = sqrt.((sigma .^ (2t) .- 1.0f0) ./ 2.0f0 ./ log(sigma))
+marginal_prob_std(t, sigma = 25.0f0) = sqrt.((sigma .^ (2t) .- 1.0f0) ./ 2.0f0 ./ log(sigma))
 
 struct UNet
     layers::NamedTuple
 end
 
-function UNet(channels=[32, 64, 128, 256], embed_dim=256, scale=30.0f0)
+function UNet(channels = [32, 64, 128, 256], embed_dim = 256, scale = 30.0f0)
     return UNet((
-        gaussfourierproj=GaussianFourierProjection(embed_dim, scale),
-        linear=Dense(embed_dim, embed_dim, swish),
+        gaussfourierproj = GaussianFourierProjection(embed_dim, scale),
+        linear = Dense(embed_dim, embed_dim, swish),
         # Encoding
-        conv1=Conv((3, 3), 1 => channels[1], stride=1, bias=false),
-        dense1=Dense(embed_dim, channels[1]),
-        gnorm1=GroupNorm(channels[1], 4, swish),
-        conv2=Conv((3, 3), channels[1] => channels[2], stride=2, bias=false),
-        dense2=Dense(embed_dim, channels[2]),
-        gnorm2=GroupNorm(channels[2], 32, swish),
-        conv3=Conv((3, 3), channels[2] => channels[3], stride=2, bias=false),
-        dense3=Dense(embed_dim, channels[3]),
-        gnorm3=GroupNorm(channels[3], 32, swish),
-        conv4=Conv((3, 3), channels[3] => channels[4], stride=2, bias=false),
-        dense4=Dense(embed_dim, channels[4]),
-        gnorm4=GroupNorm(channels[4], 32, swish),
+        conv1 = Conv((3, 3), 1 => channels[1], stride = 1, bias = false),
+        dense1 = Dense(embed_dim, channels[1]),
+        gnorm1 = GroupNorm(channels[1], 4, swish),
+        conv2 = Conv((3, 3), channels[1] => channels[2], stride = 2, bias = false),
+        dense2 = Dense(embed_dim, channels[2]),
+        gnorm2 = GroupNorm(channels[2], 32, swish),
+        conv3 = Conv((3, 3), channels[2] => channels[3], stride = 2, bias = false),
+        dense3 = Dense(embed_dim, channels[3]),
+        gnorm3 = GroupNorm(channels[3], 32, swish),
+        conv4 = Conv((3, 3), channels[3] => channels[4], stride = 2, bias = false),
+        dense4 = Dense(embed_dim, channels[4]),
+        gnorm4 = GroupNorm(channels[4], 32, swish),
         # Decoding
-        tconv4=ConvTranspose((3, 3), channels[4] => channels[3], stride=2, bias=false),
-        dense5=Dense(embed_dim, channels[3]),
-        tgnorm4=GroupNorm(channels[3], 32, swish),
-        tconv3=ConvTranspose((3, 3), channels[3] + channels[3] => channels[2], pad=(0, -1, 0, -1), stride=2, bias=false),
-        dense6=Dense(embed_dim, channels[2]),
-        tgnorm3=GroupNorm(channels[2], 32, swish),
-        tconv2=ConvTranspose((3, 3), channels[2] + channels[2] => channels[1], pad=(0, -1, 0, -1), stride=2, bias=false),
-        dense7=Dense(embed_dim, channels[1]),
-        tgnorm2=GroupNorm(channels[1], 32, swish),
-        tconv1=ConvTranspose((3, 3), channels[1] + channels[1] => 1, stride=1, bias=false),
+        tconv4 = ConvTranspose((3, 3), channels[4] => channels[3], stride = 2, bias = false),
+        dense5 = Dense(embed_dim, channels[3]),
+        tgnorm4 = GroupNorm(channels[3], 32, swish),
+        tconv3 = ConvTranspose((3, 3), channels[3] + channels[3] => channels[2], pad = (0, -1, 0, -1), stride = 2, bias = false),
+        dense6 = Dense(embed_dim, channels[2]),
+        tgnorm3 = GroupNorm(channels[2], 32, swish),
+        tconv2 = ConvTranspose((3, 3), channels[2] + channels[2] => channels[1], pad = (0, -1, 0, -1), stride = 2, bias = false),
+        dense7 = Dense(embed_dim, channels[1]),
+        tgnorm2 = GroupNorm(channels[1], 32, swish),
+        tconv1 = ConvTranspose((3, 3), channels[1] + channels[1] => 1, stride = 1, bias = false),
     ))
 end
 
 @functor UNet
 
-expand_dims(x::AbstractVecOrMat, dims::Int=2) = reshape(x, (ntuple(i -> 1, dims)..., size(x)...))
+expand_dims(x::AbstractVecOrMat, dims::Int = 2) = reshape(x, (ntuple(i -> 1, dims)..., size(x)...))
 
 function (model::UNet)(x, t)
     # Embedding
@@ -85,18 +85,18 @@ function (model::UNet)(x, t)
     h = model.layers.tconv4(h4)
     h = h .+ expand_dims(model.layers.dense5(embed), 2)
     h = model.layers.tgnorm4(h)
-    h = model.layers.tconv3(cat(h, h3; dims=3))
+    h = model.layers.tconv3(cat(h, h3; dims = 3))
     h = h .+ expand_dims(model.layers.dense6(embed), 2)
     h = model.layers.tgnorm3(h)
-    h = model.layers.tconv2(cat(h, h2, dims=3))
+    h = model.layers.tconv2(cat(h, h2, dims = 3))
     h = h .+ expand_dims(model.layers.dense7(embed), 2)
     h = model.layers.tgnorm2(h)
-    h = model.layers.tconv1(cat(h, h1, dims=3))
+    h = model.layers.tconv1(cat(h, h1, dims = 3))
     # Scaling Factor
     h ./ expand_dims(marginal_prob_std(t), 3)
 end
 
-function model_loss(model, x, ϵ=1.0f-5)
+function model_loss(model, x, ϵ = 1.0f-5)
     batch_size = size(x)[end]
     # (batch) of random times to approximate 𝔼[⋅] wrt. 𝘪 ∼ 𝒰(0, 𝘛)
     random_t = rand!(similar(x, batch_size)) .* (1.0f0 - ϵ) .+ ϵ
@@ -110,14 +110,14 @@ function model_loss(model, x, ϵ=1.0f-5)
     # mean over batches
     mean(
         # L₂ norm over WHC dimensions
-        sum((score .* std + z) .^ 2; dims=1:(ndims(x) - 1))
+        sum((score .* std + z) .^ 2; dims = 1:(ndims(x)-1))
     )
 end
 
 function get_data(batch_size)
     xtrain, ytrain = MLDatasets.MNIST(:train)[:]
     xtrain = reshape(xtrain, 28, 28, 1, :)
-    DataLoader((xtrain, ytrain), batchsize=batch_size, shuffle=true)
+    DataLoader((xtrain, ytrain), batchsize = batch_size, shuffle = true)
 end
 
 function struct2dict(::Type{DT}, s) where {DT<:AbstractDict}
@@ -135,6 +135,7 @@ struct2dict(s) = struct2dict(Dict, s)
     verbose_freq = 10                               # logging for every verbose_freq iterations
     tblogger = true                                 # log training with tensorboard
     save_path = "output"                            # results path
+    dryrun = true
 end
 
 # load hyperparamters
@@ -175,7 +176,7 @@ for epoch = 1:args.epochs
         x = device(x)
         (loss, grads) = Flux.withgradient(model -> model_loss(model, x), model)
         Flux.update!(opt_state, model, grads[1])
-        next!(progress; showvalues=[(:loss, loss)])
+        next!(progress; showvalues = [(:loss, loss)])
 
         # logging with TensorBoard
         if args.tblogger && train_steps % args.verbose_freq == 0
@@ -184,6 +185,8 @@ for epoch = 1:args.epochs
             end
         end
         train_steps += 1
+        args.dryrun && break
     end
+    args.dryrun && break
 end
 
