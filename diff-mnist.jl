@@ -1,21 +1,7 @@
-using MLDatasets
-using Functors: @functor
-using Flux
-using Flux: chunk, params
-using MLUtils
-using Parameters: @with_kw
-using BSON
-using CUDA
-using Images
-using Logging: with_logger
+using BSON, CUDA, Dates, Flux, Images, JLD2, MLDatasets, MLUtils, Random, Statistics
 using ProgressMeter: Progress, next!
-using TensorBoardLogger: TBLogger, tb_overwrite
-using Random
-using Statistics
-using Dates
-using JLD2
-# include("../lib/utils.jl")
-# include("../lib/diffusion.jl")
+using Functors: @functor
+
 include("./lib/utils.jl")
 include("./lib/diffusion.jl")
 
@@ -101,131 +87,41 @@ end
 struct2dict(s) = struct2dict(Dict, s)
 
 # arguments for the `train` function
-args = @env_const begin
+@env_const begin
     η = 1e-4                                        # learning rate
     batch_size = 16                                 # batch size
     epochs = 50                                     # number of epochs
     save_every = 2
     seed = 1                                        # random seed
-    cuda = true                                    # use CPU
     verbose_freq = 10                               # logging for every verbose_freq iterations
-    tblogger = true                                 # log training with tensorboard
     save_path = "output"                            # results path
     dryrun = false
     σ_max = 25f0
 end
 
 function train()
-    args.seed > 0 && Random.seed!(args.seed)
-
-    # GPU config
-    if args.cuda && CUDA.has_cuda()
-        dev = gpu
-        @info "Training on GPU"
-    else
-        dev = cpu
-        @info "Training on CPU"
-    end
-
-    # load MNIST images
-    loader = get_data(args.batch_size)
-    model = UNet(1) |> dev
+    seed > 0 && Random.seed!(seed)
+    loader = get_data(batch_size)
+    model = UNet(1) |> gpu
     sum(length, Flux.params(model))  # 1115296
     opt_state = Flux.setup(Adam(), model);
 
-    !ispath(args.save_path) && mkpath(args.save_path)
-
-    # logging by TensorBoard.jl
-    if args.tblogger
-        tblogger = TBLogger(args.save_path, tb_overwrite)
-    end
-
-    # # Training
-    # epoch = 1
-    # x, _ = loader |> first |> dev
-    # score_matching_loss(model, x)
-    # grads, = Flux.gradient(model) do model
-    #     score_matching_loss(model, x)
-    # end
-
-    train_steps = 0
-    @info "Start Training, total $(args.epochs) epochs"
-    for epoch = 1:args.epochs
+    @info "Start Training, total $(epochs) epochs"
+    for epoch = 1:epochs
         @info "Epoch $(epoch)"
         progress = Progress(length(loader))
-
         for (x, _) = loader
-            x = dev(x)
+            x = gpu(x)
             loss, grads = Flux.withgradient(model) do model
                 score_matching_loss(model, x)
             end
             Flux.update!(opt_state, model, grads[1])
             next!(progress; showvalues = [(:loss, loss)])
-
-            # logging with TensorBoard
-            if args.tblogger && train_steps % args.verbose_freq == 0
-                with_logger(tblogger) do
-                    @info "train" loss = loss
-                end
-            end
-            train_steps += 1
-            args.dryrun && break
+            dryrun && break
         end
-        args.dryrun && break
+        dryrun && break
     end
-
-    # save model
-    epoch = args.epochs
-    model_str = "&batchsize=$(args.batch_size)&eta=$(args.η)&epoch=$epoch($(args.epochs))"
-    model_path = joinpath(args.save_path, "diffusion-mnist$model_str.bson")
-    let model = cpu(model), args = struct2dict(args)
-        BSON.@save model_path model args
-        @info "Model saved: $(model_path)"
-    end
+    return model
 end
 
-# if abspath(PROGRAM_FILE) == @__FILE__
-    train()
-# end
-
-function test()
-    args.seed > 0 && Random.seed!(args.seed)
-
-    # GPU config
-    if args.cuda && CUDA.has_cuda()
-        dev = gpu
-        @info "Training on GPU"
-    else
-        dev = cpu
-        @info "Training on CPU"
-    end
-
-    # load MNIST images
-    loader = get_data(args.batch_size)
-    model = UNet(1) |> dev
-    sum(length, Flux.params(model))  # 1115296
-    opt_state = Flux.setup(Adam(), model);
-
-    !ispath(args.save_path) && mkpath(args.save_path)
-
-    # logging by TensorBoard.jl
-    if args.tblogger
-        tblogger = TBLogger(args.save_path, tb_overwrite)
-    end
-
-    # Training
-    epoch = 1
-    x, _ = loader |> first |> dev
-    score_matching_loss(model, x)
-    grads, = Flux.gradient(model) do model
-        score_matching_loss(model, x)
-    end
-
-    # load model
-    epoch = args.epochs
-    model_path = joinpath(args.save_path, "diffusion-mnist&batchsize=16&eta=0.0001&epoch=50(50).bson")
-    model = cpu(model)
-    BSON.@load model_path model
-    @info "Model saved: $(model_path)"
-end
-
+model = train()
