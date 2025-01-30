@@ -2,7 +2,7 @@
 
 julia_version = "1.11.3"
 manifest_format = "2.0"
-project_hash = "821b8e055390c346ff2239bc1cea37f8a6a725db"
+project_hash = "e5d99f95942714f60ee66f32b5fa0d0522ebd32f"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "e1ce448a0d7f88168ffe2eeac4549c32d45a42d1"
@@ -3803,6 +3803,12 @@ weakdeps = ["CUDA"]
     [deps.StridedViews.extensions]
     StridedViewsCUDAExt = "CUDA"
 
+[[deps.StringDistances]]
+deps = ["Distances", "StatsAPI"]
+git-tree-sha1 = "5b2ca70b099f91e54d98064d5caf5cc9b541ad06"
+uuid = "88034a9c-02f8-509d-84a9-84ec65e18404"
+version = "0.11.3"
+
 [[deps.StringEncodings]]
 deps = ["Libiconv_jll"]
 git-tree-sha1 = "b765e46ba27ecf6b44faf70df40c57aa3a547dcb"
@@ -3909,6 +3915,12 @@ version = "0.1.1"
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 version = "1.11.0"
+
+[[deps.TestImages]]
+deps = ["AxisArrays", "ColorTypes", "FileIO", "ImageIO", "ImageMagick", "OffsetArrays", "Pkg", "StringDistances"]
+git-tree-sha1 = "fc32a2c7972e2829f34cf7ef10bbcb11c9b0a54c"
+uuid = "5e47fb64-e119-507b-a336-dd2b206d9990"
+version = "1.9.0"
 
 [[deps.TextWrap]]
 git-tree-sha1 = "43044b737fa70bc12f6105061d3da38f881a3e3c"
