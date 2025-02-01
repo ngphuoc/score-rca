@@ -401,6 +401,7 @@ Comonicon.@main function main(; epochs::Int = 100, image_size::Int = 128,
 
         for (i, data) in enumerate(data_loader)
             step += 1
+            @show typeof(data)
             (_, _, stats, tstate) = Training.single_train_step!(
                 AutoZygote(), loss_function, data, tstate)
             image_losses[i] = stats.image_loss
