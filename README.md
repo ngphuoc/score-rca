@@ -1,3 +1,6 @@
+TODO:
+- Random graph benchmark
+
 The following codes are for running experiment for each methods on the datasets
 
 - julia --project=. run-random-graphs.jl

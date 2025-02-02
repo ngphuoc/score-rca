@@ -39,6 +39,11 @@ pydeepcopy = pyimport("copy").deepcopy
 @unpack get_noise_dependent_function = dowhy.gcm._noise
 
 
+"""
+min_depth = 10
+n_nodes = 20
+n_root_nodes = 2
+"""
 function random_rca_dag(min_depth, n_nodes, n_root_nodes)
     is_sufficiently_deep_graph = false
     ground_truth_dag = target_node = nothing
