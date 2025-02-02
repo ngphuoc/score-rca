@@ -6,9 +6,9 @@ using ProgressMeter: Progress, next!
 import NNlib: batched_mul
 
 include("lib/utils.jl")
-include("./lib/diffusion.jl")
-include("./lib/nnlib.jl")
-include("./lib/plot.jl")
+include("lib/diffusion.jl")
+include("lib/nnlib.jl")
+include("lib/plot.jl")
 
 args = @env begin
     activation=Flux.swish
@@ -192,7 +192,8 @@ combined_fig
 
 x = @> Iterators.product(range(xlim..., length=20), range(ylim..., length=20)) collect vec;
 x = @> reinterpret(reshape, Float64, x) Array{Float32} gpu;
-t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+t = fill!(similar(x, size(x)[end]), 0.001) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+# t = rand!(similar(x, size(x)[end])) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
 σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
 J = @> 0.2diffusion_model(x, t)
 @≥ J, x cpu.()

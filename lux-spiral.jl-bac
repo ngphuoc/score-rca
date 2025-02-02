@@ -100,17 +100,19 @@ expand_dims(x::AbstractVecOrMat, dims::Int=2) = reshape(x, (ntuple(i -> 1, dims)
 
 function sde(rng::AbstractRNG; channels, block_depth, min_freq, max_freq, σ_max, embedding_dims)
     unet = unet_model(; channels, block_depth, min_freq, max_freq, embedding_dims)
+    bn = BatchNorm(2; affine=false, track_stats=true)
     σ_max = σ_max
 
-    return @compact(; unet, rng, σ_max, dispatch=:SDE
+    return @compact(; unet, bn, rng, σ_max, dispatch=:SDE
     ) do x::AbstractArray{<:Real, 2}
+        x = bn(x)
         rng = Lux.replicate(rng)
-        z = randn_like(rng, x)
+        z = rand_like(rng, x)
         t = rand_like(rng, x, (1, size(x, 2))).* (1f0 - 1f-5) .+ 1f-5
         σ_t = marginal_prob_std(t; σ_max)
         x̃ = @. x + z * σ_t
-        score = unet((x̃, t)) ./ σ_t
-        x̂ = @. x̃ + score * σ_t
+        score = unet((x̃, t)) ./ σ_t  # parametrize the normalized score
+        x̂ = x̃ + score .* σ_t
         @return (score, σ_t, z, x̂, x)
     end
 end
@@ -225,6 +227,19 @@ function splot(u, v)
     return streamplot(f, x, y, colormap=:magma)
 end
 
+function denormalize(model::StatefulLuxLayer, x::AbstractArray{<:Real, 2})
+    mean = model.st.bn.running_mean
+    var = model.st.bn.running_var
+    std = sqrt.(var .+ model.model.layers.bn.epsilon)
+    return std .* x .+ mean
+end
+
+function descale(model::StatefulLuxLayer, score::AbstractArray{<:Real, 2})
+    var = model.st.bn.running_var
+    std = sqrt.(var .+ model.model.layers.bn.epsilon)
+    return std .* score
+end
+
 function setup_sampler(num_steps=500, ϵ=1.0f-3)
     time_steps = LinRange(1.0f0, ϵ, num_steps)
     Δt = time_steps[1] - time_steps[2]
@@ -244,7 +259,8 @@ function Euler_Maruyama_sampler(model::StatefulLuxLayer, init_x::AbstractArray{<
         x = mean_x .+ g .* sqrt(Δt) .* oftype(init_x, randn(Float32, size(x)))
         scores[i] = x
     end
-    x̂ = mean_x
+    x̂ = denormalize(model, mean_x)
+    scores = descale.(Ref(model), scores)
     return x̂, scores
 end
 
@@ -276,7 +292,7 @@ function plotting(path)
 
     # Plot perturbed data
     x = @> X_val gdev;
-    z = randn_like(rng, x)
+    z = rand_like(rng, x)
     t = rand_like(rng, x, (1, size(x, 2))).* (1f0 - 1f-5) .+ 1f-5
     σ_t = marginal_prob_std(t; args.σ_max)
     x̃ = x .+ σ_t .* z
@@ -293,7 +309,7 @@ function plotting(path)
     x = @> Iterators.product(range(xlim..., length=20), range(ylim..., length=20)) collect vec;
     x = @> reinterpret(reshape, Float64, x) Array{Float32} gdev;
     x̂, scores = Euler_Maruyama_sampler(model, x)
-    J = @> 0.2scores[end]
+    J = @> scores[1]
     @≥ J, x cdev.()
 
     x, y = eachrow(x);
@@ -320,11 +336,11 @@ function plotting(path)
     save(fpath, combined_fig)
 end
 
-model, tstate, args, X = train();
+# model, tstate, args, X = train();
 path = joinpath("data", "lux-spiral.jld2")
-@info "Saving model to $(path)"
-parameters = tstate.parameters |> cpu_device()
-states = tstate.states |> cpu_device()
-@save path parameters states args
+# @info "Saving model to $(path)"
+# parameters = tstate.parameters |> cpu_device()
+# states = tstate.states |> cpu_device()
+# @save path parameters states args
 plotting(path);
 
