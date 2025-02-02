@@ -1,4 +1,6 @@
-using ArgCheck, CairoMakie, ConcreteStructs, Comonicon, DataAugmentation, DataDeps, FileIO, ImageCore, JLD2, Lux, LuxCUDA, MLUtils, Optimisers, ParameterSchedulers, ProgressBars, Random, Setfield, StableRNGs, Statistics, Zygote
+using ArgCheck, CairoMakie, ConcreteStructs, Comonicon, DataAugmentation, DataDeps,
+FileIO, ImageCore, JLD2, Lux, LuxCUDA, MLUtils, Optimisers,
+ParameterSchedulers, ProgressBars, Random, Setfield, StableRNGs, Statistics, Zygote
 using CUDA
 using TensorBoardLogger: TBLogger, log_value, log_images
 include("lib/utils.jl")
@@ -103,53 +105,21 @@ function sde(rng::AbstractRNG; channels, block_depth, min_freq, max_freq, σ_max
 
     return @compact(; unet, bn, rng, σ_max, dispatch=:SDE
     ) do x::AbstractArray{<:Real, 2}
-        x_bn = bn(x)
+        x = bn(x)
         rng = Lux.replicate(rng)
-        z = rand_like(rng, x_bn)
-        t = rand_like(rng, x_bn, (1, size(x_bn, 2))).* (1f0 - 1f-5) .+ 1f-5
+        z = rand_like(rng, x)
+        t = rand_like(rng, x, (1, size(x, 2))).* (1f0 - 1f-5) .+ 1f-5
         σ_t = marginal_prob_std(t; σ_max)
         x̃ = @. x + z * σ_t
         score = unet((x̃, t)) ./ σ_t  # parametrize the normalized score
         x̂ = x̃ + score .* σ_t
-        @return (score, σ_t, z, x̂)
+        @return (score, σ_t, z, x̂, x)
     end
 end
 
 marginal_prob_std(t; σ_max) = sqrt.((σ_max .^ (2t) .- 1.0f0) ./ 2.0f0 ./ log(σ_max))
 
 diffusion_coeff(t, σ_max=convert(eltype(t), 25.0f0)) = σ_max .^ t
-
-# function Euler_Maruyama_sampler(model, init_x::AbstractArray{T,N}, time_steps, Δt, σ_max) where {T,N}
-#     x = mean_x = init_x
-#     @showprogress "Euler-Maruyama Sampling" for time_step in time_steps
-#         batch_time_step = fill!(similar(init_x, size(init_x)[end]), 1) .* time_step
-#         g = @> diffusion_coeff(batch_time_step, σ_max) expand_dims(N-1)
-#         mean_x = x .+ g .^ 2 .* model(x, batch_time_step) .* Δt
-#         x = mean_x .+ g .* sqrt(Δt) .* oftype(init_x, randn(Float32, size(x)))
-#     end
-#     return mean_x
-# end
-
-function score_matching_loss(unet, x::AbstractArray{T,N}; ϵ=1.0f-5, σ_max=25f0) where {T,N}
-    batchsize = size(x)[end]
-    t = rand!(similar(x, batchsize)) .* (1.0f0 - ϵ) .+ ϵ;
-    z = randn!(similar(x))
-    σ_t = expand_dims(marginal_prob_std(t; σ_max), N-1)
-    # (batch) of perturbed 𝘹(𝘵)'s to approximate 𝔼 wrt. 𝘹(t) ∼ 𝒫₀ₜ(𝘹(𝘵)|𝘹(0))
-    x̃ = x + z .* σ_t
-    score = unet(x̃, t)
-    sum(abs2, score .* σ_t + z) / batchsize
-end
-
-function sm_loss(unet, x::AbstractMatrix{<:Real}; ϵ=1.0f-5, σ_max=25f0)
-    batchsize = size(x)[end]
-    t = rand!(similar(x, batchsize)) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
-    z = randn!(similar(x))
-    σ_t = expand_dims(marginal_prob_std(t; σ_max), 1)
-    x̃ = x + z .* σ_t
-    score = unet(x̃, t)
-    return sum(abs2, score .* σ_t + z) / batchsize
-end
 
 const maeloss = MAELoss()
 
@@ -173,15 +143,15 @@ function make_spiral(rng::AbstractRNG, n_samples::Int=1000)
     [x y]'
 end
 
-function main()
+function train()
     args = @env begin
-        epochs = 100
+        epochs = 1000
         image_size = 128
-        batchsize = 32
+        batchsize = 128
         σ_max = 25f0
-        learning_rate_start = 1.0f-3
-        learning_rate_end = 1.0f-5
-        weight_decay = 1.0f-6
+        learning_rate_start = 1.0f-2
+        learning_rate_end = 1.0f-4
+        weight_decay = 1.0f-7
         checkpoint_interval = 25
         diffusion_steps = 80
         generate_image_interval = 5
@@ -223,25 +193,154 @@ function main()
         model, ps, st, AdamW(; eta=args.learning_rate_start, lambda=args.weight_decay))
     scheduler = CosAnneal(args.learning_rate_start, args.learning_rate_end, args.epochs)
 
+    pbar = ProgressBar(args.epochs)
     for epoch in 1:args.epochs
-        pbar = ProgressBar(data_loader)
         eta = scheduler(epoch)
         tstate = Optimisers.adjust!(tstate, eta)
         image_losses = Vector{Float32}(undef, length(data_loader))
         score_losses = Vector{Float32}(undef, length(data_loader))
-        for (i, x) in enumerate(data_loader)
+        for (i, data) in enumerate(data_loader)
+            x, = data
             (_, _, stats, tstate) = Training.single_train_step!(
                 AutoZygote(), loss_function, x, tstate)
             image_losses[i] = stats.image_loss
             score_losses[i] = stats.score_loss
+        end
+        if epoch % 10 == 0
             ProgressBars.update(pbar)
-            set_description(
-                pbar, "Epoch: $(epoch) Image Loss: $(mean(view(image_losses, 1:i))) Score \
-                       Loss: $(mean(view(score_losses, 1:i)))")
+            set_description(pbar,
+                "Epoch: $(epoch) Image Loss: $(mean(view(image_losses, 1:iend))) Score \
+                Loss: $(mean(view(score_losses, 1:iend)))")
         end
     end
-    return tstate
+    return model, tstate, args, X
 end
 
-main()
+using LaTeXStrings, CairoMakie, Interpolations
+include("lib/plot.jl")
+
+function splot(u, v)
+    nx, ny = size(u)
+    x, y = 1:nx, 1:ny
+    intu, intv = linear_interpolation((x,y), u), linear_interpolation((x,y), v)
+    f(x) = Point2f(intu(x...), intv(x...))
+    return streamplot(f, x, y, colormap=:magma)
+end
+
+function denormalize(model::StatefulLuxLayer, x::AbstractArray{<:Real, 2})
+    mean = model.st.bn.running_mean
+    var = model.st.bn.running_var
+    std = sqrt.(var .+ model.model.layers.bn.epsilon)
+    return std .* x .+ mean
+end
+
+function descale(model::StatefulLuxLayer, score::AbstractArray{<:Real, 2})
+    var = model.st.bn.running_var
+    std = sqrt.(var .+ model.model.layers.bn.epsilon)
+    return std .* score
+end
+
+function setup_sampler(num_steps=500, ϵ=1.0f-3)
+    time_steps = LinRange(1.0f0, ϵ, num_steps)
+    Δt = time_steps[1] - time_steps[2]
+    return time_steps, Δt
+end
+
+function Euler_Maruyama_sampler(model::StatefulLuxLayer, init_x::AbstractArray{<:Real,2})
+    unet = StatefulLuxLayer{true}(model.model.layers.unet, model.ps.unet, model.st.unet)
+    time_steps, Δt = setup_sampler()
+    x = mean_x = init_x
+    scores = Vector{typeof(x)}(undef, length(time_steps))
+    for (i, time_step) = enumerate(time_steps)
+        batch_time_step = ones_like(init_x, (1, size(init_x)[end])) .* time_step
+        g = diffusion_coeff(batch_time_step, model.st.σ_max)
+        score = unet((x, batch_time_step))
+        mean_x = x .+ g .^ 2 .* score .* Δt
+        x = mean_x .+ g .* sqrt(Δt) .* oftype(init_x, randn(Float32, size(x)))
+        scores[i] = x
+    end
+    x̂ = denormalize(model, mean_x)
+    scores = descale.(Ref(model), scores)
+    return x̂, scores
+end
+
+function plotting(path)
+    @info "Plots"
+    @load path parameters states args
+    rng = StableRNG(args.generate_image_seed)
+    gdev = gpu_device()
+    cdev = cpu_device()
+    ps = parameters |> gdev;
+    st = states |> gdev;
+    model = sde(rng; args.channels, args.block_depth, args.min_freq, args.max_freq, args.σ_max, args.embedding_dims)
+    # Lux.apply(model, x, ps, st)
+    model = StatefulLuxLayer{true}(model, ps, Lux.testmode(st));
+
+    # Define the plot limits
+    xlim = ylim = (-15, 15)
+    # Plot data
+    # X_val = X[:, 1:10:end] |> cdev
+    X_val = X |> cdev
+    x, y = eachrow(X_val)
+    # Create the combined figure
+    combined_fig = Figure()
+
+    # Add the first subplot
+    ax1 = Axis(combined_fig[1, 1], title=L"Data $(x, y)$", xlabel=L"x", ylabel=L"y", limits=(xlim, ylim))
+    scatter!(ax1, x, y)
+    combined_fig
+
+    # Plot perturbed data
+    x = @> X_val gdev;
+    z = rand_like(rng, x)
+    t = rand_like(rng, x, (1, size(x, 2))).* (1f0 - 1f-5) .+ 1f-5
+    σ_t = marginal_prob_std(t; args.σ_max)
+    x̃ = x .+ σ_t .* z
+    x, y = eachrow(cdev(x̃))
+
+    # Add the second subplot
+    ax2 = Axis(combined_fig[1, 2], title=L"Perturbed score matching $(x,y)$", xlabel=L"x", ylabel=L"y", limits=(xlim, ylim))
+    scatter!(ax2, x, y)
+
+    combined_fig
+
+    # Plot gradients
+
+    x = @> Iterators.product(range(xlim..., length=20), range(ylim..., length=20)) collect vec;
+    x = @> reinterpret(reshape, Float64, x) Array{Float32} gdev;
+    x̂, scores = Euler_Maruyama_sampler(model, x)
+    J = @> scores[1]
+    @≥ J, x cdev.()
+
+    x, y = eachrow(x);
+    u, v = eachrow(J);
+
+    # Add the third subplot
+    ax3 = Axis(combined_fig[2, 1], title="Gradients", xlabel=L"x", ylabel=L"y", limits=(xlim, ylim))
+    @which quiver!(ax3, x, y, u, v)
+
+    # Add the stream plot
+
+    @≥ x, y, u, v reshape.(20, 20)
+    ax4 = Axis(combined_fig[2, 2], title="Stream Plot", xlabel="x", ylabel="y")
+    splot!(ax4, u, v)
+
+    splot(u, v)
+
+    # Display the combined plot
+    combined_fig
+
+    # Save the combined figure
+    fpath = "fig/lux-spiral-2d-combined.png"
+    @info "Saving plot to $fpath"
+    save(fpath, combined_fig)
+end
+
+# model, tstate, args, X = train();
+path = joinpath("data", "lux-spiral.jld2")
+# @info "Saving model to $(path)"
+# parameters = tstate.parameters |> cpu_device()
+# states = tstate.states |> cpu_device()
+# @save path parameters states args
+plotting(path);
 
