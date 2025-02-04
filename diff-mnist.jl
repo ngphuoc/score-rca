@@ -89,7 +89,7 @@ struct2dict(s) = struct2dict(Dict, s)
 # arguments for the `train` function
 @env_const begin
     η = 1e-4                                        # learning rate
-    batch_size = 16                                 # batch size
+    batch_size = 32                                 # batch size
     epochs = 50                                     # number of epochs
     save_every = 2
     seed = 1                                        # random seed
