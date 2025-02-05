@@ -13,7 +13,7 @@ using Flux: DataLoader, crossentropy
 import Flux: _big_show, _show_children
 
 # Visualization
-using StatsPlots, Plots
+using Plots
 using Plots: plot, palette
 using LaTeXStrings, Plots.PlotMeasures
 using ColorSchemes
@@ -376,8 +376,7 @@ function load_normalised_data(args)
     return g, x, x3, xa, y, y3, ya, ε, ε3, εa, μx, σx, anomaly_nodes
 end
 
-generate_data(args)
+# generate_data(args)
 generate_data_skewed(args)
-generate_data_timeit(args)
-plot_data(args)
-
+# generate_data_timeit(args)
+# plot_data(args)

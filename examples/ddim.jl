@@ -21,7 +21,6 @@ function sinusoidal_embedding(x::AbstractArray{T, 4}, min_freq::T, max_freq::T,
         embedding_dims::Int) where {T <: AbstractFloat}
     size(x)[1:3] != (1, 1, 1) &&
         throw(DimensionMismatch("Input shape must be (1, 1, 1, batch)"))
-
     lower, upper = log(min_freq), log(max_freq)
     n = embedding_dims ÷ 2
     d = (upper - lower) / (n - 1)
@@ -297,41 +296,41 @@ end
 
 # ## Entry Point for our code
 
-epochs::Int=100
-image_size::Int=128
-batchsize::Int=32
-learning_rate_start::Float32=1.0f-3
-learning_rate_end::Float32=1.0f-5
-weight_decay::Float32=1.0f-6
-checkpoint_interval::Int=25
-expt_dir=tempname(@__DIR__)
-diffusion_steps::Int=80
-generate_image_interval::Int=5
+epochs::Int = 100
+image_size::Int = 128
+batchsize::Int = 32
+learning_rate_start::Float32 = 1.0f-3
+learning_rate_end::Float32 = 1.0f-5
+weight_decay::Float32 = 1.0f-6
+checkpoint_interval::Int = 25
+expt_dir = tempname(@__DIR__)
+diffusion_steps::Int = 80
+generate_image_interval::Int = 5
 # model hyper params
-channels::Vector{Int}=[32, 64, 96, 128]
-block_depth::Int=2
-min_freq::Float32=1.0f0
-max_freq::Float32=1000.0f0
-embedding_dims::Int=32
-min_signal_rate::Float32=0.02f0
-max_signal_rate::Float32=0.95f0
-generate_image_seed::Int=12
+channels::Vector{Int} = [32, 64, 96, 128]
+block_depth::Int = 2
+min_freq::Float32 = 1.0f0
+max_freq::Float32 = 1000.0f0
+embedding_dims::Int = 32
+min_signal_rate::Float32 = 0.02f0
+max_signal_rate::Float32 = 0.95f0
+generate_image_seed::Int = 12
 # inference specific
-inference_mode::Bool=false
-saved_model_path=nothing
-generate_n_images::Int=12
+inference_mode::Bool = false
+saved_model_path = nothing
+generate_n_images::Int = 12
 
-Comonicon.@main function main(; epochs::Int=100, image_size::Int=128,
-        batchsize::Int=32, learning_rate_start::Float32=1.0f-3,
-        learning_rate_end::Float32=1.0f-5, weight_decay::Float32=1.0f-6,
-        checkpoint_interval::Int=25, expt_dir=tempname(@__DIR__),
-        diffusion_steps::Int=80, generate_image_interval::Int=5,
+Comonicon.@main function main(; epochs::Int = 100, image_size::Int = 128,
+        batchsize::Int = 32, learning_rate_start::Float32 = 1.0f-3,
+        learning_rate_end::Float32 = 1.0f-5, weight_decay::Float32 = 1.0f-6,
+        checkpoint_interval::Int = 25, expt_dir = tempname(@__DIR__),
+        diffusion_steps::Int = 80, generate_image_interval::Int = 5,
         # model hyper params
-        channels::Vector{Int}=[32, 64, 96, 128], block_depth::Int=2, min_freq::Float32=1.0f0, max_freq::Float32=1000.0f0,
-        embedding_dims::Int=32, min_signal_rate::Float32=0.02f0,
-        max_signal_rate::Float32=0.95f0, generate_image_seed::Int=12,
+        channels::Vector{Int} = [32, 64, 96, 128], block_depth::Int = 2, min_freq::Float32 = 1.0f0, max_freq::Float32 = 1000.0f0,
+        embedding_dims::Int = 32, min_signal_rate::Float32 = 0.02f0,
+        max_signal_rate::Float32 = 0.95f0, generate_image_seed::Int = 12,
         # inference specific
-        inference_mode::Bool=false, saved_model_path=nothing, generate_n_images::Int=12)
+        inference_mode::Bool = false, saved_model_path = nothing, generate_n_images::Int = 12)
 
     isdir(expt_dir) || mkpath(expt_dir)
 
@@ -402,6 +401,7 @@ Comonicon.@main function main(; epochs::Int=100, image_size::Int=128,
 
         for (i, data) in enumerate(data_loader)
             step += 1
+            @show typeof(data)
             (_, _, stats, tstate) = Training.single_train_step!(
                 AutoZygote(), loss_function, data, tstate)
             image_losses[i] = stats.image_loss
