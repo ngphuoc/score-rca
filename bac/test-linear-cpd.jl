@@ -2,19 +2,14 @@ include("data-rca.jl")
 
 a = randn(100)
 b = randn(100) .+ 2*a .+ 3
-# data = DataFrame(a=a, b=b)
+
 data = vcat(a', b')
-
 cpdA = RootCPD(:A, [], Normal(0f0, 1))
-
 cpdB = LinearCPD(:B, [:A], randn(1), Normal(0f0, 1))
-
 Distributions.fit!(cpdA, data, 1, Int[])
 Distributions.fit!(cpdB, data, 2, [1])
-
 bn = BayesNet([cpdA, cpdB])
 @> bn.dag adjacency_matrix
-
 Distributions.fit!(bn, data)
 
 # cpdB = LinearGaussianCPD(:b, [:a], [1.0], 0.0, 1.0)

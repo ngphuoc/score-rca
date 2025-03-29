@@ -1,4 +1,3 @@
-using Flux: Data
 using Graphs, BayesNets, Flux, PythonCall
 using Parameters: @unpack
 @unpack truncexpon, halfnorm = pyimport("scipy.stats")

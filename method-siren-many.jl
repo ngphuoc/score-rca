@@ -29,7 +29,7 @@ dnet = train_dsm(DSM(
 
 # TODO: mixture of scales
 function get_score(dnet, x)
-    t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+    t = 0.01 * ones_like(x) * (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
     # σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
     @> dnet(x, t)
 end

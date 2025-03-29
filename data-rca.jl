@@ -61,6 +61,7 @@ args = @env begin
     #-- dsm
     hidden_dim = 10  # hiddensize factor
     fourier_scale=10.0f0
+    reverse_steps = 100
     σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
     σ_min = 1f-3
     save_path = "data/main-2d.bson"
@@ -377,6 +378,6 @@ function load_normalised_data(args)
 end
 
 # generate_data(args)
-generate_data_skewed(args)
+# generate_data_skewed(args)
 # generate_data_timeit(args)
 # plot_data(args)

@@ -1,9 +1,7 @@
 using DataFrames: SymbolOrString
-using Flux: Data
 using Graphs, BayesNets, Flux, PythonCall
 using Parameters: @unpack
 @unpack truncexpon, halfnorm = pyimport("scipy.stats")
-@unpack random = pyimport("numpy")
 include("lib/utils.jl")
 include("lib/distributions.jl")
 include("denoising-score-matching.jl")
@@ -12,6 +10,41 @@ include("bayesnets-fit.jl")
 include("data-rca.jl")
 
 @info "#-- 0. load data"
+
+using Enzyme
+
+"""
+n_nodes = 4
+"""
+function generate_linear_skewed_test_grad(n_nodes = 4; args)
+    #-- Normal FCMs
+    g = BayesNet()
+    ds = map((d, s) -> d(0, s), rand([Normal, Normal], 2), rand(0.1:0.1:1, 2))
+    # root
+    d = MixtureModel(ds, [0.7, 0.3])
+    cpd = RootCPD(:X1, d)
+    push!(g, cpd)
+    for j = 2:n_nodes
+        linear = Dense(1 => 1, bias=false) |> f64
+        cpd = MlpCPD(Symbol("X$j"), [Symbol("X$(j-1)")], linear, deepcopy(d))
+        push!(g, cpd)
+    end
+    adjacency_matrix(g.dag)
+
+    #-- sampling
+    ε = sample_noise(g, 300)
+    x = forward(g, ε)
+    # mutating error
+    grads = Zygote.gradient(ε) do ε
+        @> forward(g, ε) sum
+    end
+
+    dup_g = Enzyme.Duplicated(g)
+    grads = Flux.gradient(dup_g, Const(ε)) do g, ε
+        @> forward(g, ε) sum
+    end
+
+end
 
 function generate_linear_skewed(n_nodes = 4; args)
     #-- Normal FCMs
@@ -88,11 +121,11 @@ fname = "results/random-linear-v2.csv"
 rm(fname, force=true)
 
 dfs = DataFrame(
-               n_nodes = Int[],
-               n_anodes = Int[],
+               nodes = Int[],
+               out = Int[],
                method = String[],
-               noise_dist  = String[],
-               data_id = Int[],
+               dist  = String[],
+               data = Int[],
                ranking = Float64[],
                manual = Float64[],
                score = Float64[],
@@ -101,9 +134,9 @@ dfs = DataFrame(
 
 # include("method-siren.jl")
 
-include("method-siren-many.jl")
+# include("method-siren-many.jl")
 
-# include("method-bigen.jl")
+include("method-bigen.jl")
 
 # include("method-causalrca.jl")
 
@@ -111,9 +144,9 @@ include("method-siren-many.jl")
 
 # include("method-traversal.jl")
 
-dfs[!, :manual] = round.(dfs[!,  :manual], digits=3)
-dfs[!, :ranking] = round.(dfs[!, :ranking], digits=3)
-dfs[!, :score] = round.(dfs[!, :score], digits=3)
+# dfs[!, :manual] = round.(dfs[!,  :manual], digits=3)
+# dfs[!, :ranking] = round.(dfs[!, :ranking], digits=3)
+# dfs[!, :score] = round.(dfs[!, :score], digits=3)
 
-CSV.write(fname, dfs, header=!isfile(fname), append=true)
+# CSV.write(fname, dfs, header=!isfile(fname), append=true)
 

@@ -109,37 +109,26 @@ function forward(bn::BayesNet, ε::AbstractMatrix{T}, ii::Vector{Vector{Int64}})
 end
 
 # this version uses feature indices as input to avoid Zygote mutation error
-function forward_leaf(bn::BayesNet, ε::AbstractMatrix{T}, ii) where T
-    d = length(bn.cpds)
-    batchsize = size(ε, 2)
-    X = zero(similar(ε, 0, batchsize))
-    for j = 1:d
-        y = zero(similar(ε, 1, batchsize))
-        x = X[ii[j], :]
-        if length(x) > 0
-            y += forward(bn.cpds[j], x)
-        end
-        y += ε[[j], :]
-        X = vcat(X, y)
-    end
-    X[end, :]
+function forward_leaf(bn::BayesNet, ε::AbstractMatrix{T}) where T
+    ii = @> bn.dag adjacency_matrix Matrix{Bool} eachcol findall.()
+    return forward_leaf(bn, ε, ii)
 end
 
 # this version uses feature indices as input to avoid Zygote mutation error
-function forward_leaf(bn::BayesNet, ε::AbstractMatrix{T}) where T
+function forward_leaf(bn::BayesNet, ε::AbstractMatrix{T}, ii) where T
     d = length(bn.cpds)
-    ii = @> bn.dag adjacency_matrix Matrix{Bool} eachcol findall.()
     batchsize = size(ε, 2)
-    X = zero(similar(ε, 0, batchsize))
+    xs = (zero(similar(ε, 0, batchsize)), )
     for j = 1:d
         y = zero(similar(ε, 1, batchsize))
-        x = X[ii[j], :]
+        x = @> xs[ii[j]] vcats
+        @show size(x)
         if length(x) > 0
             y += forward(bn.cpds[j], x)
         end
         y += ε[[j], :]
-        X = vcat(X, y)
+        xs = (xs..., y)
     end
-    X[end, :]
+    xs[end]
 end
 

@@ -6,7 +6,6 @@
 # [RealNVP implementation in MLX](https://github.com/ml-explore/mlx-examples/blob/main/normalizing_flow/).
 
 using Lux, Reactant, Random, Statistics, Enzyme, MLUtils, ConcreteStructs, Printf, Optimisers, CairoMakie
-using Metal
 const dev = reactant_device(; force=true)  # 82s
 # const dev = cpu_device()  # 82s
 

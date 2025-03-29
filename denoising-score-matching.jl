@@ -9,17 +9,17 @@ end
 Optimisers.trainable(dnet::DSM) = (; dnet.model)
 
 # to pass model net from outside
-# function DSM(input_dim; args)
-#     X = F = n_groups = input_dim
-#     H, fourier_scale = args.hidden_dim, args.fourier_scale
-#     model = ConditionalChain(
-#                              Parallel(.+, Dense(X, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-#                              Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-#                              Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
-#                              Dense(H, X),
-#                             )
-#     return DSM(args.σ_max, model)
-# end
+function DSM(input_dim; args)
+    X = F = n_groups = input_dim
+    H, fourier_scale = args.hidden_dim, args.fourier_scale
+    model = ConditionalChain(
+                             Parallel(.+, Dense(X, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+                             Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+                             Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+                             Dense(H, X),
+                            )
+    return DSM(args.σ_max, model)
+end
 
 function (dnet::DSM)(x::AbstractMatrix{T}, t) where {T}
     h = dnet.model(x, t)

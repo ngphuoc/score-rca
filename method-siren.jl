@@ -1,5 +1,6 @@
-include("./denoising-score-matching.jl")
-include("./plot-dsm.jl")
+include("denoising-score-matching.jl")
+include("plot-dsm.jl")
+include("lib/diffusion.jl")
 
 @info "#-- 1. collapse data"
 
@@ -13,26 +14,25 @@ z = ε
 @> ε mean(dims=2)
 @> ε std(dims=2)
 
-# @≥ z vec transpose;
+@≥ z vec transpose;
 @≥ z, x, xa, ε, εa args.to_device.()
 
 @info "#-- 2. train score function on data with mean removed"
 
 σ_max = 2std(εa)
 fourier_scale = 2σ_max
-
 hidden_dim = 50
 dnet = train_dsm(DSM(
                      σ_max,
                      ConditionalChain(
-                                      Parallel(.+, Dense(d, hidden_dim), Chain(RandomFourierFeatures(hidden_dim, fourier_scale), Dense(hidden_dim, hidden_dim))), swish,
-                                      Dense(hidden_dim, d),
+                                      Parallel(.+, Dense(1, hidden_dim), Chain(RandomFourierFeatures(hidden_dim, fourier_scale), Dense(hidden_dim, hidden_dim))), swish,
+                                      Dense(hidden_dim, 1),
                                      )
                     ), z; args)
 
 # TODO: mixture of scales
 function get_score(dnet, x)
-    t = fill!(similar(x, size(x)[end]), 0.01) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+    t = 0.01ones_like(x) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
     # σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
     @> dnet(x, t)
 end
@@ -48,8 +48,16 @@ function get_ref(x, r)
     r[:, j]
 end
 
-function langevine_ref(dnet, init_x)
-    time_steps, Δt = setup_sampler(init_x; args)
+# function setup_sampler(; reverse_steps=100, ϵ=1.0f-3)
+#     time_steps = LinRange(1.0f0, ϵ, reverse_steps)
+#     Δt = time_steps[1] - time_steps[2]
+#     return time_steps, Δt
+# end
+
+function langevine_ref(dnet, init_x; reverse_steps=100, ϵ=1.0f-3)
+    time_steps = @> LinRange(1.0f0, ϵ, reverse_steps) collect
+    Δt = time_steps[1] - time_steps[2]
+    time_steps .= 1f-3
     r, ∇s = Euler_Maruyama_sampler(dnet, init_x, time_steps, Δt, σ_max)
     @≥ r reshape(size(εa))
     @≥ ∇s reshape(size(εa)..., :)
@@ -85,6 +93,8 @@ anomaly_nodes
 init_ε = @> εa vec transpose Array
 ε̂r, ∇s = langevine_ref(dnet, init_ε)
 
+# autograd score
+
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
@@ -116,7 +126,7 @@ for k=1:d
     ndcg_ranking = ndcg_score(gt_value', anomaly_value'; k)
     ndcg_manual = ndcg_score(gt_manual', anomaly_value'; k)
     ndcg_pvalue = ndcg_score(gt_pvalue', anomaly_value'; k)
-    @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.()
+    @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.() round.(digits=3)
     push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
 end
 

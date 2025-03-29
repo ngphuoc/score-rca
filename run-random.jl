@@ -1,8 +1,6 @@
-using Flux: Data
 using Graphs, BayesNets, Flux, PythonCall
 using Parameters: @unpack
 @unpack truncexpon, halfnorm = pyimport("scipy.stats")
-@unpack random = pyimport("numpy")
 include("lib/utils.jl")
 include("lib/distributions.jl")
 include("denoising-score-matching.jl")
