@@ -4,11 +4,11 @@ using Parameters: @with_kw, @unpack
 using Logging: with_logger
 using ProgressMeter: Progress, next!
 import NNlib: batched_mul
-using CUDA
 
 include("lib/utils.jl")
 include("lib/diffusion.jl")
 include("lib/nnlib.jl")
+include("lib/plot.jl")
 
 args = @env begin
     activation=Flux.swish
@@ -81,6 +81,7 @@ function spirals_2d()
     d = size(x, 1)
 end
 
+
 struct Diffusion2d{T}
     σ_max::Float32
     score_net::T
@@ -122,11 +123,10 @@ diffusion_model = @> Diffusion2d(; args) gpu
 args
 X = @> make_spiral() f32
 n = size(X, 2)
-loader = Flux.DataLoader((X,) |> gpu; batchsize=128, shuffle=true);
+loader = Flux.DataLoader((X,) |> gpu; batchsize=32, shuffle=true);
 (x,) = @> loader first gpu
 D = size(x, 1)
 sm_loss(diffusion_model, x)  # check clip_var
-x
 
 opt = Flux.setup(Optimisers.Adam(args.lr_unet), diffusion_model);
 loss, (grad,) = Flux.withgradient(diffusion_model, ) do diffusion_model
@@ -153,116 +153,69 @@ end
 # @≥ X, diffusion_model cpu.();
 # BSON.@save "data/main-2d.bson" args X diffusion_model
 
-using PyPlot, CUDA  # assume CUDA.jl for gpu support
 
-# Define plot limits
-xlims = (-15, 15)
-ylims = (-15, 15)
+@info "Plots"
+using LaTeXStrings
+using CairoMakie
 
-# ---------------------------
-# 1. Plot Original Data
-# ---------------------------
-# Get a CPU copy of the data
-X_val = X |> cpu  # X is assumed to be 2×N
-# Extract rows as x and y data (eachrow returns an iterator; here we use indexing)
-x_data = X_val[1, :]
-y_data = X_val[2, :]
+# Define the plot limits
+xlim = ylim = (-15, 15)
 
-# Create a 2×2 grid figure
-fig, axs = subplots(2, 2, figsize=(12, 10))
+# Plot data
+# X_val = X[:, 1:10:end] |> cpu
+X_val = X |> cpu
+x, y = eachrow(X_val)
 
-# First subplot: Original Data
-ax1 = axs[1, 1]
-ax1.set_title("Data (x, y)")
-ax1.set_xlabel("x")
-ax1.set_ylabel("y")
-ax1.set_xlim(xlims)
-ax1.set_ylim(ylims)
-ax1.scatter(x_data, y_data, s=10, alpha=0.5)
+# Create the combined figure
+combined_fig = Figure()
 
-# ---------------------------
-# 2. Plot Perturbed Data
-# ---------------------------
-# Move X_val to GPU (if needed)
-x_gpu = X_val |> gpu
-# Generate random time t for each sample
-t = rand(Float32, size(x_gpu, 2)) .* (1f0 - 1f-5) .+ 1f-5  # vector of size N
-# Compute σ_t using your marginal probability function (assumed defined)
-σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1) |> gpu
-# Add noise (using same shape as x_gpu)
-z = randn(Float32, size(x_gpu)) |> gpu
-# Perturb data: x̃ = x + σ_t .* noise
-x_tilde = x_gpu .+ σ_t .* z
-# Bring perturbed data back to CPU
-x_tilde_cpu = cpu(x_tilde)
-x_data2 = x_tilde_cpu[1, :]
-y_data2 = x_tilde_cpu[2, :]
+# Add the first subplot
+ax1 = Axis(combined_fig[1, 1], title=L"Data $(x, y)$", xlabel=L"x", ylabel=L"y", limits=(xlim, ylim))
+scatter!(ax1, x, y)
+combined_fig
 
-# Second subplot: Perturbed Data
-ax2 = axs[1, 2]
-ax2.set_title("Perturbed score matching (x, y)")
-ax2.set_xlabel("x")
-ax2.set_ylabel("y")
-ax2.set_xlim(xlims)
-ax2.set_ylim(ylims)
-ax2.scatter(x_data2, y_data2, s=10, alpha=0.5)
+# Plot perturbed data
+x = @> X_val gpu;
+t = rand!(similar(x, size(x)[end])) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
+z = randn!(similar(x));  # Normal
+x̃ = x .+ σ_t .* z
+x, y = eachrow(cpu(x̃))
 
-# ---------------------------
-# 3. Plot Gradients
-# ---------------------------
-# Create a grid of points over the plot limits
+# Add the second subplot
+ax2 = Axis(combined_fig[1, 2], title=L"Perturbed score matching $(x,y)$", xlabel=L"x", ylabel=L"y", limits=(xlim, ylim))
+scatter!(ax2, x, y)
 
-using PythonCall
+combined_fig
 
-function meshgrid(x, y)
-    X = repeat(reshape(collect(x), 1, length(x)), length(y), 1)
-    Y = repeat(reshape(collect(y), length(y), 1), 1, length(x))
-    return X, Y
-end
+# Plot gradients
 
-x_grid = range(xlims[1], stop=xlims[2], length=20)
-y_grid = range(ylims[1], stop=ylims[2], length=20)
-X_grid, Y_grid = meshgrid(x_grid, y_grid)
-# Flatten the grid into 2×(20*20) array (each column is a point)
-xy = vcat(vec(X_grid)', vec(Y_grid)')
-# Convert to Float32 and move to GPU
-xy_gpu = gpu(Float32.(xy))
-# Create a constant time vector (e.g. 0.001 for all grid points)
-t_grid = fill(0.001f0, size(xy_gpu, 2)) |> gpu
-# (Optional) Compute σ_t on the grid if needed:
-σ_t_grid = expand_dims(marginal_prob_std(t_grid; args.σ_max), 1)
-# Evaluate your diffusion model at these grid points (multiplied by a factor, e.g. 0.2)
-J = 0.2f0 .* diffusion_model(xy_gpu, t_grid) |> cpu
-# Extract grid point coordinates and gradient components
-x_grid = xy[1, :]
-y_grid = xy[2, :]
-u = J[1, :]  # gradient in x-direction
-v = J[2, :]  # gradient in y-direction
+x = @> Iterators.product(range(xlim..., length=20), range(ylim..., length=20)) collect vec;
+x = @> reinterpret(reshape, Float64, x) Array{Float32} gpu;
+t = fill!(similar(x, size(x)[end]), 0.001) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+# t = rand!(similar(x, size(x)[end])) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
+σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
+J = @> 0.2diffusion_model(x, t)
+@≥ J, x cpu.()
 
-# Third subplot: Gradients (using quiver)
-ax3 = axs[2, 1]
-ax3.set_title("Gradients")
-ax3.set_xlabel("x")
-ax3.set_ylabel("y")
-ax3.set_xlim(xlims)
-ax3.set_ylim(ylims)
-ax3.quiver(x_grid, y_grid, u, v)
+x, y = eachrow(x);
+u, v = eachrow(J);
 
-# ---------------------------
-# 4. Plot Stream Plot
-# ---------------------------
-# For a stream plot we need to reshape the gradients back to a grid shape.
-U = reshape(u, size(X_grid))
-V = reshape(v, size(Y_grid))
-ax4 = axs[2, 2]
-ax4.set_title("Stream Plot")
-ax4.set_xlabel("x")
-ax4.set_ylabel("y")
-ax4.set_xlim(xlims)
-ax4.set_ylim(ylims)
-ax4.streamplot(X_grid, Y_grid, U, V)
+# Add the third subplot
+ax3 = Axis(combined_fig[2, 1], title="Gradients", xlabel=L"x", ylabel=L"y", limits=(xlim, ylim))
+@which quiver!(ax3, x, y, u, v)
 
-# Adjust layout and display/save the figure
-tight_layout()
-savefig("fig/combined-spiral-2d.png")
+# Add the stream plot
+
+@≥ x, y, u, v reshape.(20, 20)
+ax4 = Axis(combined_fig[2, 2], title="Stream Plot", xlabel="x", ylabel="y")
+splot!(ax4, u, v)
+
+splot(u, v)
+
+# Display the combined plot
+combined_fig
+
+# Save the combined figure
+save("fig/combined-spiral-2d.png", combined_fig)
 

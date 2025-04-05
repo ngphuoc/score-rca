@@ -3,7 +3,7 @@ using Flux
 include("./data-rca.jl")
 include("./lib/utils.jl")
 include("./denoising-score-matching.jl")
-include("./plot-dsm.jl")
+# include("./plot-dsm.jl")
 
 const to_device = args.to_device
 
@@ -35,7 +35,7 @@ vx = abs.(ε̂x)  # anomaly_measure
 
 @info "#-- 3. ground truth ranking and results"
 
-max_k = n_anomaly_nodes
+max_k = args.n_anomaly_nodes
 overall_max_k = max_k + 1
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 d = size(adjmat, 1)

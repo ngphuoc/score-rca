@@ -2,7 +2,8 @@ using Revise
 using DataFrames, Distributions, BayesNets, CSV
 using BayesNets: name
 using DataFrames: index
-using Graphs, GraphPlot
+using Graphs
+# using GraphPlot
 using Revise
 using DataFrames, Distributions, BayesNets, CSV, FileIO, JLD2
 using Optimisers, BSON

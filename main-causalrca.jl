@@ -3,7 +3,7 @@ using Flux: Data
 include("./data-rca.jl")
 include("./lib/utils.jl")
 include("./denoising-score-matching.jl")
-include("./plot-dsm.jl")
+# include("./plot-dsm.jl")
 seed = 1
 
 const to_device = args.to_device
