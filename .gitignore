@@ -16,3 +16,4 @@ datasets*
 *.gz
 *.tzg
 .CondaPkg
+figs
