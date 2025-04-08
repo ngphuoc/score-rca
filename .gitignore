@@ -17,3 +17,5 @@ datasets*
 *.tzg
 .CondaPkg
 figs
+checkpoints
+

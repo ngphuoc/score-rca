@@ -4,15 +4,13 @@
 # ? Inverse noises
 # - Compute rca score by combining scores and sensitivities
 
-using Revise
-using Flux, CUDA, MLUtils
-include("./data-rca.jl")
-include("./lib/utils.jl")
-include("./denoising-score-matching.jl")
-include("./debug.jl")
+using Flux, CUDA, MLUtils, EndpointRanges
+include("data-rca.jl")
+include("lib/utils.jl")
+include("dsm-model.jl")
 
 to_device = args.to_device
-g, x, x3, xa, f, f3, fa, z, z3, za, μx, σx, anomaly_nodes = load_normalised_data(args);
+g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes = load_data(args);
 d = size(x, 1)
 g.cpds[1]
 g.cpds[2]
@@ -21,7 +19,7 @@ g.cpds[2]
 
 @assert x ≈ f + z
 z = x - f
-@≥ z, x, x3, xa, f, f3, fa, z, z3, za, μx, σx to_device.()
+@≥ z, x, x3, xa, f, f3, fa, z, z3, za, to_device.()
 d = size(z, 1)
 
 # Train score function on data with mean removed"
@@ -32,58 +30,27 @@ net = ConditionalChain(
                  Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
                  Dense(H, d),
                 )
-dnet = @> DSM(args.σ_max, net) to_device
-dnet = train_dsm(dnet, z; args)
+diffusion_model = @> DSM(args.σ_max, net) to_device
 
-@info "Step1: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise \epsilon_{j} and reverse diffusion from \epsilon_{j}"
-
-"""
-reverse_steps = 100
-σ_max = args.σ_max
-"""
-function langevine_ref(dnet, init_z; reverse_steps = 10, σ_max = args.σ_max)
-    time_steps = @> LinRange(1.0f0, 1f-3, reverse_steps) collect
-    Δt = time_steps[1] - time_steps[2]
-    zs, ms, ∇zs = Euler_Maruyama_sampler(dnet, init_z, time_steps, Δt, σ_max)
-    return ms, ∇zs
+if args.training
+    diffusion_model = train_dsm(diffusion_model, z; args)
+    @≥ diffusion_model, z, x, x3, xa, f, f3, fa, z, z3, za cpu.()
+    BSON.@save "data/main-siren.bson" args diffusion_model z x x3 xa f f3 fa z z3 za
 end
 
-init_z = z
-zs, ∇zs = langevine_ref(dnet, init_z)
-@≥ zs, ∇zs cpu.()
+BSON.@load "data/main-siren.bson" diffusion_model z x x3 xa f f3 fa z z3 za
+@≥ diffusion_model, z, x, x3, xa, f, f3, fa, z, z3, za gpu.()
 
-# size(zs) = (n_nodes, n_trajectories, time_steps)
-"""
-n_samples = 5
-fname = "fig/paths.png"
-"""
-function plot_path_zx(zs, xs, n_samples = 5, fname="fig/paths.png")
-    M, N, T, = size(zs)
-    @show M, N, T
-    fig, axs = subplots(M, 2, figsize=(16, 4*M))
-    # Plot original histograms
-    i = j = 1
-    vars = [zs, xs]
-    for k in 1:2
-        v = vars[k]
-        for i in 1:M
-            @show i, k
-            ax = axs[i, k]
-            for j in 1:n_samples
-                ax.plot(1:T, v[i, j, :])
-            end
-            ax.set_title("$(k % 2 == 1 ? "Noise" : "Observation") $i")
-        end
-    end
-    tight_layout()
-    savefig(fname)
-    println("Saved fig to file $fname")
+@info "Step1: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
+
+function langevine_ref(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
+    time_steps = @> LinRange(1.0f0, ϵ, n_steps) collect
+    Δt = time_steps[1] - time_steps[2]
+    xs, ms, ∇xs = Euler_Maruyama_sampler(diffusion_model, init_x, time_steps, Δt, σ_max)
+    return xs, ms, ∇xs
 end
 
 forwardg(x) = forward(g, x)
-xs = @> zs reshape(d, :) forwardg reshape(size(zs))
-plot_path_zx(zs, xs)
-
 
 @info "Step2: Forward using the mean functions f_{i} and backprop to calculate the sensitivities"
 
@@ -132,14 +99,8 @@ gt_value = @> get_z_rankings(za, ∇za) hcats
 @> gt_value mean(dims=2)
 anomaly_nodes
 
-μa = forward_1step_scaled(g, xa, μx, σx)
-ẑa = xa - μa
-xr = get_ref(xa, x);  # reference points
-μr = forward_1step_scaled(g, xr, μx, σx)
-ẑr = xr - μr
-
 @≥ ẑa, ẑr to_device
-∇xa = @> get_scores(dnet, ẑa)
+∇xa = @> get_scores(diffusion_model, ẑa)
 anomaly_measure = abs.(∇xa)
 
 using PythonCall

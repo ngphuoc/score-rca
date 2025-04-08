@@ -1,32 +1,12 @@
-# Package management
 using Revise
-
-# Data manipulation and file I/O
-using DataFrames, CSV, Tables, BSON, JLD2, JSON, FileIO
-
-# Date and time utilities
-using Dates
-
-# Statistical analysis and machine learning
+using DataFrames, CSV, Tables, BSON, JLD2, JSON, FileIO, Dates, Flux, CUDA, MLUtils, PyPlot
 using Distributions, BayesNets, MultivariateStats, Flux, Optimisers, NNlib
 using Flux: DataLoader, crossentropy
 import Flux: _big_show, _show_children
-
-# Visualization
-# using Plots
-# using Plots: plot, palette
 using LaTeXStrings
 using Measures
-# using Plots.PlotMeasures
-# using ColorSchemes
-
-# Utilities
 using Random, Printf, ProgressMeter, Distances
 using Glob
-
-# Custom configurations
-# color_palette = palette(:Paired_10)
-# colors = color_palette.colors
 
 include("./lib/utils.jl")
 include("./lib/graph.jl")
@@ -55,10 +35,10 @@ args = @env begin
     n_root_nodes = 1  # n_root_nodes
     n_anomaly_nodes = 2
     n_samples = 5000  # n observations
-    hidden = 10
+    dag_generator_hidden = 10
     anomaly_fraction = 0.1
     n_anomaly_samples = 500  # n faulty observations
-    activation=Flux.relu
+    activation=Flux.tanh
     has_node_outliers = true  # node outlier setting
     #-- dsm
     hidden_dim = 10  # hiddensize factor
@@ -66,16 +46,18 @@ args = @env begin
     reverse_steps = 100
     σ_max = 6f0  # μ + 3σ pairwise Euclidean distances of input
     σ_min = 1f-3
+    ϵ = 1f-3
     save_path = "data/main-2d.bson"
     load_path = ""
     #-- training
+    training = false
     batchsize = 50
     lr = 1e-3  # learning rate
     n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
     n_timesteps = 100
     perturbed_scale = 1f0
     decay = 1e-5  # weight decay parameter for AdamW
-    epochs = 2
+    epochs = 300
     seed = 1  #  random seed
     to_device = Flux.gpu ∘ f32
 end
@@ -98,7 +80,7 @@ end
 """ target_node is the last node
 n_root_nodes = 1
 n_downstream_nodes = 1
-activation = Flux.relu
+activation = Flux.tanh
 """
 function random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
     @info "random_nonlinear_dag_generator"
@@ -201,15 +183,15 @@ function draw_normal_perturbed_anomaly(g; args)
     end
 
     #-- anomaly data
-    εa = sample_noise(ga, 1000n_anomaly_samples)
+    εa = sample_noise(ga, 10000n_anomaly_samples)
     xa = forward(ga, εa)
     εa
     ds = [cpd.d for cpd in g.cpds]
     za = @> zval.(ds, eachrow(εa)) hcats transpose
     anomaly_nodes
     z2 = za[anomaly_nodes, :]
-    @> abs.(z2) .> 3 minimum(dims=1) vec
-    ia = @> abs.(z2) .> 3 minimum(dims=1) vec findall
+    @> abs.(z2) .> 4 minimum(dims=1) vec
+    ia = @> abs.(z2) .> 4 minimum(dims=1) vec findall
     ia = ia[1:n_anomaly_samples]
     εa = εa[:, ia]
     xa = xa[:, ia]
@@ -285,17 +267,35 @@ function fig_name(args)
     "$(string(args.noise_dist))-$(args.data_id)"
 end
 
+function various_plots(g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes, data_id)
+    d = size(x, 1)
+    fig, axs = subplots(6, d, figsize=(6*d, 6*6))
+    for i = 1:d
+        for k = 1:6
+            plot_name, data = [("Noise", z), ("Mean", f), ("Observation", x), ("Noise", za), ("Mean", fa), ("Observation", xa)][k]
+            ax = axs[k, i]
+            i in anomaly_nodes && k > 3 && (plot_name *= " Outlier")
+            ax.set_title("$plot_name $i")
+            ax.hist(data[i, :], bins=50, alpha=0.7)
+        end
+    end
+    tight_layout()
+    fname = "fig/generated_data_skewed-$(data_id).png"
+    savefig(fname)
+end
+
 function generate_data_skewed(args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
-    for _ = 1:5
+    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, dag_generator_hidden, activation = args
+    for data_id = 1:5
         # ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
         ds = map((d, s) -> d(0, s), rand([Normal], 2), rand(0.1:0.1:1, 2))
         noise_dists = MixedDist(ds)
         @info "generating " * data_path(noise_dists)
-        g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
-        ε, x, f, ε3, x3, f3, εa, xa, fa, anomaly_nodes = draw_normal_perturbed_anomaly(g; args);
+        g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden=dag_generator_hidden, noise_dists, activation)
+        z, x, f, z3, x3, f3, za, xa, fa, anomaly_nodes = draw_normal_perturbed_anomaly(g; args);
         @show anomaly_nodes
-        BSON.@save data_path(noise_dists) args g ε x f ε3 x3 f3 εa xa fa anomaly_nodes ds
+        BSON.@save data_path(noise_dists) args g z x f z3 x3 f3 za xa fa anomaly_nodes ds
+        various_plots(g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes, data_id)
     end
 end
 
@@ -352,34 +352,50 @@ end
 #    # @> Plots.plot(p1, ps..., p0, layout=l, size=(1200, 800)) savefig("fig/fcm-outliers-$(fig_name(args)).png")
 #end
 
+#""" Load data from saved, "/data/noise_dist-data_id.bson"
+#y: output mean: x ≈ y + ε
+#return g, normal, perturb, and outlier data
+#"""
+#function load_normalised_data(args; normalised=false)
+#    fpaths = glob("data/*.bson")
+#    @assert length(fpaths) > 0
+#    fpath = fpaths[args.data_id]
+#    @info "Loading " * fpath
+#    BSON.@load fpath g ε x f ε3 x3 f3 εa xa fa anomaly_nodes ds  # don't load args
+#    @> x mean, std
+#    @> xa mean, std
+#    #-- normalise data
+#    # X = @> hcat(x, x3);
+#    X = x;
+#    μx, σx = @> X mean(dims=2), std(dims=2);
+#    normalise_x(x) = @. (x - μx) / σx
+#    scale_ε(ε) = @. ε / σx
+#    @≥ X, x, x3, xa, f, f3, fa normalise_x.();
+#    @≥ ε, ε3, εa scale_ε.();
+#    @assert x ≈ f + ε
+#    @assert x3 ≈ f3 + ε3
+#    @assert xa ≈ fa + εa
+#    # plot_data(; g, ε, x, f, μx, σx, εa, xa, aμ)
+#    d = @> g.dag adjacency_matrix size(1)
+#    x1 = x[1, :]
+#    xa1 = xa[1, :]
+#    return g, x, x3, xa, f, f3, fa, ε, ε3, εa, μx, σx, anomaly_nodes
+#end
+
 """ Load data from saved, "/data/noise_dist-data_id.bson"
-y: output mean: x ≈ y + ε
+y: output mean: x ≈ y + z
 return g, normal, perturb, and outlier data
 """
-function load_normalised_data(args; normalised=false)
+function load_data(args; normalised=false)
     fpaths = glob("data/*.bson")
     @assert length(fpaths) > 0
     fpath = fpaths[args.data_id]
     @info "Loading " * fpath
     BSON.@load fpath g ε x f ε3 x3 f3 εa xa fa anomaly_nodes ds  # don't load args
-    @> x mean, std
-    @> xa mean, std
-    #-- normalise data
-    # X = @> hcat(x, x3);
-    X = x;
-    μx, σx = @> X mean(dims=2), std(dims=2);
-    normalise_x(x) = @. (x - μx) / σx
-    scale_ε(ε) = @. ε / σx
-    @≥ X, x, x3, xa, f, f3, fa normalise_x.();
-    @≥ ε, ε3, εa scale_ε.();
     @assert x ≈ f + ε
     @assert x3 ≈ f3 + ε3
     @assert xa ≈ fa + εa
-    # plot_data(; g, ε, x, f, μx, σx, εa, xa, aμ)
-    d = @> g.dag adjacency_matrix size(1)
-    x1 = x[1, :]
-    xa1 = xa[1, :]
-    return g, x, x3, xa, f, f3, fa, ε, ε3, εa, μx, σx, anomaly_nodes
+    return g, x, x3, xa, f, f3, fa, ε, ε3, εa, anomaly_nodes
 end
 
 # generate_data(args)

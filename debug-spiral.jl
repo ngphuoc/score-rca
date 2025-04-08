@@ -1,34 +1,5 @@
 using PythonCall, PyPlot, Random, Distributions
 
-# include("./plot-dsm.jl")
-
-function test_plot()
-    # Generate original data: 5 variables, 100 observations
-    data = randn(100, 5)
-    # Generate random noise with random means (variance = 1)
-    noise_means = rand(Uniform(-3, 3), 5)
-    noise = randn(100, 5) .+ noise_means'
-    # Add noise to original data
-    data_noisy = data .+ noise
-    # Set up 2x5 subplot
-    fig, axes = subplots(2, 5, figsize=(20, 8))
-    # Plot original histograms
-    for i in 1:5
-        ax = axes[1, i]
-        ax.hist(data[:, i], bins=20, alpha=0.7)
-        ax.set_title("Original Var $i")
-    end
-    # Plot noisy histograms
-    for i in 1:5
-        ax = axes[2, i]
-        ax.hist(data_noisy[:, i], bins=20, alpha=0.7, color="orange")
-        ax.set_title("Noisy Var $i (μ=$(round(noise_means[i], digits=2)))")
-    end
-    # Adjust layout and save to file
-    tight_layout()
-    savefig("fig/histogram_grid.png")
-end
-
 function plot_zx(a, fname)
     w, h, = size(a)
     @show w, h

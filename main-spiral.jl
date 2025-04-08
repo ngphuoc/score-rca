@@ -23,6 +23,7 @@ args = @env begin
     hidden_dim = 128  # hiddensize factor
     hidden_dims = [64, 128]
     input_dim = 2
+    training = false
     save_path = "data/main-2d.bson"
     load_path = ""
     lr_regressor = 1e-3  # learning rate
@@ -139,23 +140,25 @@ Flux.update!(opt, diffusion_model, grad);
 opt = Flux.setup(Optimisers.Adam(args.lr_unet), diffusion_model);
 progress = Progress(args.epochs, desc="Fitting diffusion_model");
 
-# for epoch = 1:args.epochs
-#     total_loss = 0.0
-#     for (x,) = loader
-#         @≥ x gpu
-#         global loss, (grad,) = Flux.withgradient(diffusion_model, ) do diffusion_model
-#             sm_loss(diffusion_model, x)
-#         end
-#         grad
-#         Flux.update!(opt, diffusion_model, grad)
-#         total_loss += loss
-#     end
-#     # @show total_loss/n
-#     next!(progress; showvalues=[(:loss, total_loss/length(loader))])
-# end
-# @≥ X, diffusion_model cpu.();
-# BSON.@save "data/main-2d.bson" args X diffusion_model
-BSON.@load "data/main-2d.bson" args X diffusion_model
+if args.training
+    for epoch = 1:args.epochs
+        total_loss = 0.0
+        for (x,) = loader
+            @≥ x gpu
+            global loss, (grad,) = Flux.withgradient(diffusion_model, ) do diffusion_model
+                sm_loss(diffusion_model, x)
+            end
+            grad
+            Flux.update!(opt, diffusion_model, grad)
+            total_loss += loss
+        end
+        # @show total_loss/n
+        next!(progress; showvalues=[(:loss, total_loss/length(loader))])
+    end
+    @≥ X, diffusion_model cpu.();
+    BSON.@save "models/main-2d.bson" args z diffusion_model
+end
+BSON.@load "models/main-2d.bson" args X diffusion_model
 @≥ diffusion_model gpu
 loader = Flux.DataLoader((X,) |> gpu; batchsize=128, shuffle=true);
 (x,) = @> loader first gpu
