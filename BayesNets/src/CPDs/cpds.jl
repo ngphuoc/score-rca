@@ -30,6 +30,7 @@ export
     RootCPD,             # Normal with linear mean
     LocationCPD,             # Normal with linear mean
     MlpCPD,             # Normal with linear mean
+    MlpLsCPD,             # Normal with linear mean
     LinearCPD,             # Normal with linear mean
     MlpGaussianCPD,             # Normal with linear mean
     LinearGaussianCPD,             # Normal with linear mean
@@ -167,6 +168,7 @@ include("nonlinear_gaussian_cpd.jl")
 include("root_cpd.jl")
 include("location_cpd.jl")
 include("mlp_cpd.jl")
+include("mlpls_cpd.jl")
 include("linear_cpd.jl")
 include("mlp_gaussian_cpd.jl")
 include("nonlinear_score_cpd.jl")

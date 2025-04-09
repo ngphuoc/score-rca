@@ -12,7 +12,7 @@ end
 
 name(cpd::MlpCPD) = cpd.target
 parents(cpd::MlpCPD) = cpd.parents
-nparams(cpd::MlpCPD) = 2
+nparams(cpd::MlpCPD) = length(Flux.destructure(cpd)[1])
 
 (cpd::MlpCPD)() = (cpd)(Assignment()) # cpd()
 (cpd::MlpCPD)(pair::Pair{NodeName}...) = (cpd)(Assignment(pair)) # cpd(:A=>1)

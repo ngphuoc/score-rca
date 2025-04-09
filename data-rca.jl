@@ -37,7 +37,7 @@ args = @env begin
     n_samples = 5000  # n observations
     dag_generator_hidden = 10
     anomaly_fraction = 0.1
-    n_anomaly_samples = 500  # n faulty observations
+    n_anomaly_samples = 100  # n faulty observations
     activation=Flux.tanh
     has_node_outliers = true  # node outlier setting
     #-- dsm
@@ -115,6 +115,49 @@ function random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, no
     return dag
 end
 
+""" target_node is the last node
+n_root_nodes = 1
+n_downstream_nodes = 1
+activation = Flux.tanh
+"""
+function random_mlpls_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
+    @info "random_mlpls_dag_generator"
+    dag = random_rca_dag(min_depth, n_nodes, n_root_nodes)
+    B = @> dag adjacency_matrix Matrix{Bool}
+    d = nv(dag)
+    dag = BayesNet()
+    node_names = [Symbol("X$i") for i=1:d]
+    for j = 1:d
+        if sum(B[:, j]) == 0  # root
+            cpd = RootCPD(node_names[j], noise_dists)
+            push!(dag, cpd)
+        else  # leaf
+            ii = findall(B[:, j])
+            parents = node_names[ii]
+            # Random mechanism
+            pa_size = length(parents)
+            W1 = rand(Uniform(0.5, 2.0), (hidden, pa_size))
+            W1[rand(size(W1)...) .< 0.5] .*= -1
+            W2 = rand(Uniform(0.5, 2.0), (1, hidden))
+            W2[rand(size(W2)...) .< 0.5] .*= -1
+            mlpl = Chain(
+                        Dense(pa_size => hidden, activation, bias=false),
+                        Dense(hidden => 1, bias=false),
+                       ) |> f64
+            mlpl[1].weight .= W1
+            mlpl[2].weight .= W2
+            mlps = Chain(
+                        Dense(pa_size => hidden, activation, bias=false),
+                        Dense(hidden => 1, Flux.σ, bias=false),
+                        x -> x .+ 0.5f0,
+                       ) |> f64
+            cpd = MlpLsCPD(node_names[j], parents, mlpl, mlps, noise_dists)
+            push!(dag, cpd)
+        end
+    end
+    return dag
+end
+
 function copy_linear_dag(bn)
     g = deepcopy(bn)
     for i = 1:length(g.cpds)
@@ -159,8 +202,8 @@ function draw_normal_perturbed_anomaly(g; args)
     n_anomaly_samples = args.n_anomaly_samples
     d = length(g.cpds)
     #-- normal data
-    ε = sample_noise(g, args.n_samples)
-    x = forward(g, ε)
+    z = sample_noise(g, args.n_samples)
+    x, s = forward(g, z)
 
     #-- perturbed data, 3σ
     g3 = deepcopy(g)
@@ -169,8 +212,8 @@ function draw_normal_perturbed_anomaly(g; args)
             cpd.d = scale3(cpd.d)
         end
     end
-    ε3 = sample_noise(g3, args.n_samples)
-    x3 = forward(g3, ε3)
+    z3 = sample_noise(g3, args.n_samples)
+    x3, s3 = forward(g3, z3)
 
     #-- select anomaly nodes
     ga = deepcopy(g)
@@ -183,67 +226,25 @@ function draw_normal_perturbed_anomaly(g; args)
     end
 
     #-- anomaly data
-    εa = sample_noise(ga, 10000n_anomaly_samples)
-    xa = forward(ga, εa)
-    εa
+    za = sample_noise(ga, 10000n_anomaly_samples)
+    xa, sa = forward(ga, za)
+    za
     ds = [cpd.d for cpd in g.cpds]
-    za = @> zval.(ds, eachrow(εa)) hcats transpose
+    za = @> zval.(ds, eachrow(za)) hcats transpose
     anomaly_nodes
     z2 = za[anomaly_nodes, :]
     @> abs.(z2) .> 4 minimum(dims=1) vec
     ia = @> abs.(z2) .> 4 minimum(dims=1) vec findall
     ia = ia[1:n_anomaly_samples]
-    εa = εa[:, ia]
+    za = za[:, ia]
+    sa = sa[:, ia]
     xa = xa[:, ia]
-    f = x - ε
-    f3 = x3 - ε3
-    fa = xa - εa
-    return ε, x, f, ε3, x3, f3, εa, xa, fa, anomaly_nodes
-end
 
-function plot1(j; g, ε, x, y, μx, σx, εa, xa, ya, anomaly_nodes)
-    @show j
-    cpd = g.cpds[j]
-    paj = @> g.dag adjacency_matrix Matrix{Bool} getindex(:, j)
-    parent_child(x) = x[paj, :], x[[j], :]
-    εs, xs, ys, μs, σs = @> ε, x, y, μx, σx parent_child.()
-    εas, xas, yas = @> εa, xa, ya parent_child.()
-    plot23d_pca(cpd, εs, xs, ys, μs, σs, εas, xas, yas, j, anomaly_nodes)
-end
-
-""" input can be 1 or 2d
-"""
-function plot23d_pca(cpd, εs, xs, ys, μs, σs, εas, xas, yas, j, anomaly_nodes)
-    y = forward_scaled(cpd, xs, μs, σs)
-    ya = forward_scaled(cpd, xas, μs, σs)
-    #-- defaults
-    xlim = ylim = zlim = (-5, 5)
-    default(; aspect_ratio=:equal, grid=true, xlim, ylim, zlim, markersize=2, markerstrokewidth=0, titlefontsize=12, fontfamily="Computer Modern", framestyle=:box)
-    x12 = xs[1]
-    xa12 = xas[1]
-    s = j in anomaly_nodes ? "abnormal" : ""
-    title = L"f_{%$j} %$s"
-    if size(x12, 1) > 2
-        @info "more than 2d"
-        title = "PCA $j $s"
-        pca = fit(PCA, x12; maxoutdim=2)
-        x12 = predict(pca, x12)
-        xa12 = predict(pca, xa12)
-    end
-    x12 = eachrow(x12);
-    z3 = zero(xs[2]);  # 1d, for input points at base
-    xa12 = eachrow(xa12);
-    za3 = zero(xas[2])
-    x3 = xs[2]
-    xa3 = xas[2]
-    @≥ x3, z3, xa3, za3, y, ya vec.()
-    pl_data = scatter(x12..., z3; lab="input", leg=nothing, c=colors[1], xlab=L"dim_1", ylab=L"dim_2", zlab=L"output", title)
-    scatter!(pl_data, xa12..., za3; lab="input outliers", leg=nothing, c=colors[2])
-    scatter!(pl_data, x12..., x3; lab="output", leg=nothing, c=colors[3])
-    scatter!(pl_data, xa12..., xa3; lab="output outliers", leg=nothing, c=colors[4])
-    scatter!(pl_data, x12..., y; lab="output mean", leg=nothing, c=colors[5])
-    scatter!(pl_data, xa12..., ya; lab="output mean outliers", leg=nothing, c=colors[6])
-    pl_data
+    l = x - s .* z
+    l3 = x3 - s3 .* z3
+    # @show @> xa, sa, za size.()
+    la = xa - sa .* za
+    return z, x, l, s, z3, x3, l3, s3, za, xa, la, sa, anomaly_nodes
 end
 
 function dist_name(d::Distribution)
@@ -252,27 +253,25 @@ function dist_name(d::Distribution)
     "$s$σ"
 end
 
-data_path(d::MixedDist) = data_path(d.ds)
+data_path(d::MixedDist; dir="data") = data_path(d.ds; dir)
 
-function data_path(ds::AbstractVector{<:Distribution})
+function data_path(ds::AbstractVector{<:Distribution}; dir="data")
     s = @> dist_name.(ds) join
-    "data/data-$s.bson"
+    "$dir/data-$s.bson"
 end
-
-# ds = [Normal(0, 1), Laplace(0, 0.5)]
-# d = ds[1]
-# data_path(d::T, id) where T<:Union{String, Symbol} = "data/data-$d-$id.bson"
 
 function fig_name(args)
     "$(string(args.noise_dist))-$(args.data_id)"
 end
 
-function various_plots(g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes, data_id)
+function various_plots(g, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa, anomaly_nodes, data_id; dir="datals")
+    plots = [("Noise", z), ("Scale", s), ("Mean", l), ("Observation", x), ("Noise", za), ("Scale", sa), ("Mean", la), ("Observation", xa)]
     d = size(x, 1)
-    fig, axs = subplots(6, d, figsize=(6*d, 6*6))
+    n_plots = length(plots)
+    fig, axs = subplots(n_plots, d, figsize=(6*d, 6*n_plots))
     for i = 1:d
-        for k = 1:6
-            plot_name, data = [("Noise", z), ("Mean", f), ("Observation", x), ("Noise", za), ("Mean", fa), ("Observation", xa)][k]
+        for k = 1:n_plots
+            plot_name, data = plots[k]
             ax = axs[k, i]
             i in anomaly_nodes && k > 3 && (plot_name *= " Outlier")
             ax.set_title("$plot_name $i")
@@ -280,22 +279,23 @@ function various_plots(g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes, data_i
         end
     end
     tight_layout()
-    fname = "fig/generated_data_skewed-$(data_id).png"
+    fname = "$dir/generated_data_skewed-$(data_id).png"
     savefig(fname)
 end
 
-function generate_data_skewed(args)
+function generate_datals_skewed(args)
     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, dag_generator_hidden, activation = args
     for data_id = 1:5
         # ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
         ds = map((d, s) -> d(0, s), rand([Normal], 2), rand(0.1:0.1:1, 2))
         noise_dists = MixedDist(ds)
-        @info "generating " * data_path(noise_dists)
-        g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden=dag_generator_hidden, noise_dists, activation)
-        z, x, f, z3, x3, f3, za, xa, fa, anomaly_nodes = draw_normal_perturbed_anomaly(g; args);
+        fname = data_path(noise_dists; dir="datals")
+        @info "generating " * fname
+        g = random_mlpls_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden=dag_generator_hidden, noise_dists, activation)
+        z, x, l, s, z3, x3, l3, s3, za, xa, la, sa, anomaly_nodes = draw_normal_perturbed_anomaly(g; args);
         @show anomaly_nodes
-        BSON.@save data_path(noise_dists) args g z x f z3 x3 f3 za xa fa anomaly_nodes ds
-        various_plots(g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes, data_id)
+        BSON.@save fname args g z x l s z3 x3 l3 s3 za xa la sa anomaly_nodes ds
+        various_plots(g, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa, anomaly_nodes, data_id; dir="datals")
     end
 end
 
@@ -317,77 +317,12 @@ function generate_data_timeit(args)
     end
 end
 
-#function plot_data(args)
-#    @info "Loading " * data_path(args)
-#    BSON.@load data_path(args) g ε x y ε3 x3 y3 εa xa ya anomaly_nodes  # don't load args
-#    @> x mean, std
-#    @> xa mean, std
-#    #-- normalise data
-#    # X = @> hcat(x, x3);
-#    X = x;
-#    μx, σx = @> X mean(dims=2), std(dims=2);
-#    normalise_x(x) = @. (x - μx) / σx
-#    scale_ε(ε) = @. ε / σx
-#    @≥ X, x, x3, xa, y, y3, ya normalise_x.();
-#    @≥ ε, ε3, εa scale_ε.();
-#    @assert x ≈ y + ε
-#    @assert x3 ≈ y3 + ε3
-#    @assert xa ≈ ya + εa
-#    # plot_data(; g, ε, x, y, μx, σx, εa, xa, aμ)
-#    d = @> g.dag adjacency_matrix size(1)
-#    x1 = x[1, :]
-#    xa1 = xa[1, :]
-#    title = ""
-#    s = 1 in anomaly_nodes ? "abnormal" : ""
-#    title = "root $s"
-#    p1 = scatter(x1, zero(x1); lab="input", leg=nothing, c=colors[1], xlab=L"dim_1", ylab=L"dim_2", zlab=L"output", title)
-#    scatter!(p1, xa1, zero(xa1); lab="input outliers", leg=nothing, c=colors[2])
-#    ps = plot1.(2:d; g, ε, x, y, μx, σx, εa, xa, ya, anomaly_nodes)
-#    labels = ["input" "input outliers" "output" "output outliers" "output mean" "output mean outliers"]
-#    n = length(labels)
-#    l = @layout [Plots.grid(2, 2) a{0.2w}]
-#    p0 = scatter([-1], [-1], c=colors[1], lims=(0,1), legendfontsize=7, legend=:left, label=labels[1], frame=:none);
-#    [scatter!(p0, [-1], [-1], c=colors[i], label=labels[i]) for i=2:n]
-#    # color_pallete
-#    # @> Plots.plot(p1, ps..., p0, layout=l, size=(1200, 800)) savefig("fig/fcm-outliers-$(fig_name(args)).png")
-#end
-
-#""" Load data from saved, "/data/noise_dist-data_id.bson"
-#y: output mean: x ≈ y + ε
-#return g, normal, perturb, and outlier data
-#"""
-#function load_normalised_data(args; normalised=false)
-#    fpaths = glob("data/*.bson")
-#    @assert length(fpaths) > 0
-#    fpath = fpaths[args.data_id]
-#    @info "Loading " * fpath
-#    BSON.@load fpath g ε x f ε3 x3 f3 εa xa fa anomaly_nodes ds  # don't load args
-#    @> x mean, std
-#    @> xa mean, std
-#    #-- normalise data
-#    # X = @> hcat(x, x3);
-#    X = x;
-#    μx, σx = @> X mean(dims=2), std(dims=2);
-#    normalise_x(x) = @. (x - μx) / σx
-#    scale_ε(ε) = @. ε / σx
-#    @≥ X, x, x3, xa, f, f3, fa normalise_x.();
-#    @≥ ε, ε3, εa scale_ε.();
-#    @assert x ≈ f + ε
-#    @assert x3 ≈ f3 + ε3
-#    @assert xa ≈ fa + εa
-#    # plot_data(; g, ε, x, f, μx, σx, εa, xa, aμ)
-#    d = @> g.dag adjacency_matrix size(1)
-#    x1 = x[1, :]
-#    xa1 = xa[1, :]
-#    return g, x, x3, xa, f, f3, fa, ε, ε3, εa, μx, σx, anomaly_nodes
-#end
-
 """ Load data from saved, "/data/noise_dist-data_id.bson"
 y: output mean: x ≈ y + z
 return g, normal, perturb, and outlier data
 """
-function load_data(args; normalised=false)
-    fpaths = glob("data/*.bson")
+function load_data(args; dir="datals")
+    fpaths = glob("$dir/*.bson")
     @assert length(fpaths) > 0
     fpath = fpaths[args.data_id]
     @info "Loading " * fpath
@@ -400,6 +335,7 @@ end
 
 # generate_data(args)
 # generate_data_skewed(args)
+generate_datals_skewed(args)
 # generate_data_timeit(args)
 # plot_data(args)
 

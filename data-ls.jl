@@ -3,30 +3,6 @@ using Distances
 using PyPlot  # For plotting with pyplot
 using Random, Distributions, Statistics
 
-# function generate_ls_data_2d(num_samples::Int)
-#     Random.seed!(1)
-#     # Generate 2D parent variable X with heteroscedastic noise
-#     noise_variance_X = rand(Uniform(1, 2), 2, num_samples)
-#     noise_for_X = randn(2, num_samples)
-#     parent_X = sqrt.(noise_variance_X) .* noise_for_X
-#     # Define transformation parameters
-#     shift_param = rand(Uniform(-2, 2), 2)
-#     b_selector = rand(Binomial(1, 0.5), 2)
-#     b_scale_param = [b == 1 ? rand(Uniform(0.5, 2)) : rand(Uniform(-2, -0.5)) for b in b_selector]
-#     vertical_scale_param = rand(Exponential(4), 2) .+ 1
-#     # Apply sigmoid-like transformation
-#     shifted_scaled_X = b_scale_param .* (parent_X .+ shift_param)
-#     transformed_X = vertical_scale_param .* shifted_scaled_X ./ (1 .+ abs.(shifted_scaled_X))
-#     combined_transformed = sum(transformed_X, dims=2)
-#     # Location-scale noise
-#     noise_variance_Y = rand(Uniform(1, 2), num_samples)
-#     noise_for_Y = randn(num_samples)
-#     noise_Y = sqrt.(noise_variance_Y) .* noise_for_Y
-#     noise_multiplier = combined_transformed .- mean(combined_transformed) .+ 0.5
-#     child_Y = combined_transformed[:, 1] .+ noise_multiplier[:, 1] .* noise_Y
-#     return parent_X[:, 1], parent_X[:, 2], child_Y, shift_param, b_scale_param, vertical_scale_param
-# end
-
 function generate_ls_data_2d(num_samples::Int)
     # --- Generate 2D parent variable X with heteroscedastic noise ---
     # For each feature (2 features) and each sample, we generate a random variance from Uniform(1,2).

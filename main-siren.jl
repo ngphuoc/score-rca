@@ -10,7 +10,7 @@ include("lib/utils.jl")
 include("dsm-model.jl")
 
 to_device = args.to_device
-g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes = load_data(args);
+g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes = load_data(args; dir="datals");
 d = size(x, 1)
 g.cpds[1]
 g.cpds[2]

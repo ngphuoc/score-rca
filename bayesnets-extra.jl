@@ -66,6 +66,12 @@ function forward(cpd::MlpCPD, x::AbstractArray{T}) where T
     μ = cpd.mlp(x)
 end
 
+function forward(cpd::MlpLsCPD, x::AbstractArray{T}) where T
+    l = cpd.mlpl(x)
+    s = cpd.mlps(x)
+    l, s
+end
+
 function forward(cpd::LinearCPD, x::AbstractArray{T}) where T
     μ = cpd.a'x
 end
@@ -87,25 +93,29 @@ end
 
 """ Forward the noises throught the bn following the dag topo-order
 """
-function forward(bn::BayesNet, ε::AbstractMatrix{T}) where T
+function forward(bn::BayesNet, z::AbstractMatrix{T}) where T
     ii = @> bn.dag adjacency_matrix Matrix{Bool} eachcol findall.()
-    forward(bn, ε, ii)
+    forward(bn, z, ii)
 end
 
-function forward(bn::BayesNet, ε::AbstractMatrix{T}, ii::Vector{Vector{Int64}}) where T
+function forward(bn::BayesNet, z::AbstractMatrix{T}, ii::Vector{Vector{Int64}}) where T
     d = length(bn.cpds)
-    batchsize = size(ε, 2)
-    X = zero(similar(ε, 0, batchsize))
+    batchsize = size(z, 2)
+    X = zeros_like(z, (0, batchsize))
+    S = zeros_like(z, (0, batchsize))
     for j = 1:d
-        y = zero(similar(ε, 1, batchsize))
+        l = zeros_like(z, (1, batchsize))
+        s = ones_like(z, (1, batchsize))
         x = X[ii[j], :]
         if length(x) > 0
-            y += forward(bn.cpds[j], x)
+            ls = forward(bn.cpds[j], x)
+            l, s = ls isa Tuple ? ls : (ls, s)
         end
-        y += ε[[j], :]
+        y = l + s .* z[[j], :]
         X = vcat(X, y)
+        S = vcat(S, s)
     end
-    X
+    X, S
 end
 
 # this version uses feature indices as input to avoid Zygote mutation error
