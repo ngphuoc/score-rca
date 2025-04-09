@@ -50,7 +50,7 @@ args = @env begin
     save_path = "data/main-2d.bson"
     load_path = ""
     #-- training
-    training = false
+    training = true
     batchsize = 50
     lr = 1e-3  # learning rate
     n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
@@ -326,16 +326,16 @@ function load_data(args; dir="datals")
     @assert length(fpaths) > 0
     fpath = fpaths[args.data_id]
     @info "Loading " * fpath
-    BSON.@load fpath g ε x f ε3 x3 f3 εa xa fa anomaly_nodes ds  # don't load args
-    @assert x ≈ f + ε
-    @assert x3 ≈ f3 + ε3
-    @assert xa ≈ fa + εa
-    return g, x, x3, xa, f, f3, fa, ε, ε3, εa, anomaly_nodes
+    BSON.@load fpath g z x l s z3 x3 l3 s3 za xa la sa anomaly_nodes ds  # don't load args
+    @assert x ≈ l + s .* z
+    @assert x3 ≈ l3 + s3 .* z3
+    @assert xa ≈ la + sa .* za
+    return g, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa, anomaly_nodes, fpath
 end
 
 # generate_data(args)
 # generate_data_skewed(args)
-generate_datals_skewed(args)
+# generate_datals_skewed(args)
 # generate_data_timeit(args)
 # plot_data(args)
 

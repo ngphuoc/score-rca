@@ -3,6 +3,7 @@ jl_*
 run
 *.jld2
 data
+datals
 output
 tags
 .vscode

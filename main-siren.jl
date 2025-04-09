@@ -9,17 +9,16 @@ include("data-rca.jl")
 include("lib/utils.jl")
 include("dsm-model.jl")
 
-to_device = args.to_device
-g, x, x3, xa, f, f3, fa, z, z3, za, anomaly_nodes = load_data(args; dir="datals");
+g, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa, anomaly_nodes, fpath = load_data(args; dir="datals");
 d = size(x, 1)
 g.cpds[1]
 g.cpds[2]
 
 @info "# Inputs Score function estimators s_{j}^{i}, mean functions f_{i}, observation X with outlier observed at the leaf X_{n}"
 
-@assert x ≈ f + z
-z = x - f
-@≥ z, x, x3, xa, f, f3, fa, z, z3, za, to_device.()
+@assert x ≈ l + s .* z
+z = (x - l) ./ s
+@≥ z, x, l, s, z3, x3, l3, s3, za, xa, la, sa gpu.()
 d = size(z, 1)
 
 # Train score function on data with mean removed"
@@ -30,16 +29,18 @@ net = ConditionalChain(
                  Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
                  Dense(H, d),
                 )
-diffusion_model = @> DSM(args.σ_max, net) to_device
+diffusion_model = @> DSM(args.σ_max, net) gpu
 
+mpath = replace(fpath, ".bson" => "-model.bson")
 if args.training
+    @info "Step0: Training diffusion model"
     diffusion_model = train_dsm(diffusion_model, z; args)
-    @≥ diffusion_model, z, x, x3, xa, f, f3, fa, z, z3, za cpu.()
-    BSON.@save "data/main-siren.bson" args diffusion_model z x x3 xa f f3 fa z z3 za
+    @≥ diffusion_model, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa cpu.()
+    @info "Step0: Saving diffusion model to $mpath"
+    BSON.@save mpath args diffusion_model z x l s z3 x3 l3 s3 za xa la sa
 end
-
-BSON.@load "data/main-siren.bson" diffusion_model z x x3 xa f f3 fa z z3 za
-@≥ diffusion_model, z, x, x3, xa, f, f3, fa, z, z3, za gpu.()
+BSON.@load mpath args diffusion_model z x l s z3 x3 l3 s3 za xa la sa
+@≥ diffusion_model, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa gpu.()
 
 @info "Step1: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
 
@@ -52,12 +53,16 @@ end
 
 forwardg(x) = forward(g, x)
 
+init_z = z
+zs, ms, ∇zs = langevine_ref(diffusion_model, init_z, n_steps = 100) |> cpu
+xs, ss = @> zs reshape(d, :) forwardg reshape.(Ref(size(zs)))
+
 @info "Step2: Forward using the mean functions f_{i} and backprop to calculate the sensitivities"
 
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 ii = @> adjmat eachcol findall.()  # use global indices to avoid mutation error in autograd
-@≥ zs reshape(d, :) cpu
-xs = forward(g, zs)
+@> forward_leaf(g, zs, ii) sum
+
 ∇fn, = Zygote.gradient(zs, ) do zs
     @> forward_leaf(g, zs, ii) sum
 end
@@ -88,54 +93,4 @@ function get_z_rankings(za, ∇za)
     end
     return scores
 end
-
-@info "Step4: Integrate scores along the trajectories and multiply by the distance \frac{1}{2}(x_{j}-x'_{j}) for each j using Eq. 16"
-
-# TODO: recheck gt ranking scores
-∇za, = Zygote.gradient(za, ) do za
-    @> forward_leaf(g, za, ii) sum
-end
-gt_value = @> get_z_rankings(za, ∇za) hcats
-@> gt_value mean(dims=2)
-anomaly_nodes
-
-@≥ ẑa, ẑr to_device
-∇xa = @> get_scores(diffusion_model, ẑa)
-anomaly_measure = abs.(∇xa)
-
-using PythonCall
-@unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
-
-gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
-gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
-ndcg_score(gt_manual', abs.((ẑa - ẑr) .* ∇xa)', k=args.n_anomaly_nodes)
-
-df = DataFrame(
-               n_nodes = Int[],
-               n_anomaly_nodes = Int[],
-               method = String[],
-               noise_dist  = String[],
-               data_id = Int[],
-               ndcg_ranking = Float64[],
-               ndcg_manual = Float64[],
-               k = Int[],
-              )
-
-k = 1
-anomaly_measure = abs.((ẑa - ẑr) .* ∇xa)'
-# a = anomaly_measure
-# @≥ a reshape(:, 5, 4)
-# i = @> a std(dims=3) squeeze(3) argmax(dims=2) vec
-# a[i, :]
-for k=1:args.min_depth
-    ndcg_ranking = ndcg_score(gt_value', anomaly_measure; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_measure; k)
-    @≥ ndcg_ranking, ndcg_manual PyArray.() only.()
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "DSM", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, k])
-end
-
-println(df);
-
-fname = "results/random-graphs.csv"
-# CSV.write(fname, df, header=!isfile(fname), append=true)
 
