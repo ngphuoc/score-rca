@@ -285,7 +285,7 @@ end
 
 function generate_datals_skewed(args)
     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, dag_generator_hidden, activation = args
-    for data_id = 1:5
+    for data_id = 1:1
         # ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
         ds = map((d, s) -> d(0, s), rand([Normal], 2), rand(0.1:0.1:1, 2))
         noise_dists = MixedDist(ds)
@@ -299,23 +299,23 @@ function generate_datals_skewed(args)
     end
 end
 
-function generate_data_timeit(args)
-    @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
-    rng = range(log(50), log(1000), length=30)
-    rng = round.(Int, exp.(rng))
-    for n_nodes in rng
-        for id = 1:5
-            ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
-            noise_dists = MixedDist(ds)
-            @info "generating " * data_path(noise_dists)
-            g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
-            ε, x, y, ε3, x3, y3, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g; args);
-            @show anomaly_nodes
-            filepath = "data/data-timeit&nodes=$n_nodes&id=$id.bson"
-            BSON.@save filepath args g ε x y ε3 x3 y3 εa xa ya anomaly_nodes ds
-        end
-    end
-end
+# function generate_data_timeit(args)
+#     @unpack min_depth, n_nodes, n_root_nodes, n_anomaly_nodes, noise_dist, hidden, activation = args
+#     rng = range(log(50), log(1000), length=30)
+#     rng = round.(Int, exp.(rng))
+#     for n_nodes in rng
+#         for id = 1:1
+#             ds = map((d, s) -> d(0, s), rand([Normal, Laplace], 2), rand(0.1:0.1:1, 2))
+#             noise_dists = MixedDist(ds)
+#             @info "generating " * data_path(noise_dists)
+#             g = random_mlp_dag_generator(; min_depth, n_nodes, n_root_nodes, hidden, noise_dists, activation)
+#             ε, x, y, ε3, x3, y3, εa, xa, ya, anomaly_nodes = draw_normal_perturbed_anomaly(g; args);
+#             @show anomaly_nodes
+#             filepath = "data/data-timeit&nodes=$n_nodes&id=$id.bson"
+#             BSON.@save filepath args g ε x y ε3 x3 y3 εa xa ya anomaly_nodes ds
+#         end
+#     end
+# end
 
 """ Load data from saved, "/data/noise_dist-data_id.bson"
 y: output mean: x ≈ y + z

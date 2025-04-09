@@ -100,12 +100,12 @@ end
 
 function forward(bn::BayesNet, z::AbstractMatrix{T}, ii::Vector{Vector{Int64}}) where T
     d = length(bn.cpds)
-    batchsize = size(z, 2)
-    X = zeros_like(z, (0, batchsize))
-    S = zeros_like(z, (0, batchsize))
+    batch_size = size(z, 2)
+    X = zeros_like(z, (0, batch_size))
+    S = zeros_like(z, (0, batch_size))
     for j = 1:d
-        l = zeros_like(z, (1, batchsize))
-        s = ones_like(z, (1, batchsize))
+        l = zeros_like(z, (1, batch_size))
+        s = ones_like(z, (1, batch_size))
         x = X[ii[j], :]
         if length(x) > 0
             ls = forward(bn.cpds[j], x)
@@ -127,16 +127,18 @@ end
 # this version uses feature indices as input to avoid Zygote mutation error
 function forward_leaf(bn::BayesNet, z::AbstractMatrix{T}, ii) where T
     d = length(bn.cpds)
-    batchsize = size(z, 2)
-    xs = (zero(similar(z, 0, batchsize)), )
+    batch_size = size(z, 2)
+    # xs = (zero(similar(z, 0, batch_size)), )
+    xs = []
     for j = 1:d
-        y = zero(similar(z, 1, batchsize))
+        l = zeros_like(z, (1, batch_size))
+        s = ones_like(z, (1, batch_size))
         x = @> xs[ii[j]] vcats
-        @show size(x)
         if length(x) > 0
-            y += forward(bn.cpds[j], x)
+            ls = forward(bn.cpds[j], x)
+            l, s = ls isa Tuple ? ls : (ls, s)
         end
-        y += z[[j], :]
+        y = l + s .* z[[j], :]
         xs = (xs..., y)
     end
     xs[end]

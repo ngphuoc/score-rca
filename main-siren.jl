@@ -32,14 +32,14 @@ net = ConditionalChain(
 diffusion_model = @> DSM(args.σ_max, net) gpu
 
 mpath = replace(fpath, ".bson" => "-model.bson")
-if args.training
+if !isfile(mpath)
     @info "Step0: Training diffusion model"
     diffusion_model = train_dsm(diffusion_model, z; args)
     @≥ diffusion_model, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa cpu.()
     @info "Step0: Saving diffusion model to $mpath"
-    BSON.@save mpath args diffusion_model z x l s z3 x3 l3 s3 za xa la sa
+    BSON.@save mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
 end
-BSON.@load mpath args diffusion_model z x l s z3 x3 l3 s3 za xa la sa
+BSON.@load mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
 @≥ diffusion_model, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa gpu.()
 
 @info "Step1: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
@@ -61,36 +61,38 @@ xs, ss = @> zs reshape(d, :) forwardg reshape.(Ref(size(zs)))
 
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 ii = @> adjmat eachcol findall.()  # use global indices to avoid mutation error in autograd
-@> forward_leaf(g, zs, ii) sum
+size_zs = size(zs)
+z = @> zs reshape(d, :)
+@> forward_leaf(g, z, ii) sum
 
-∇fn, = Zygote.gradient(zs, ) do zs
-    @> forward_leaf(g, zs, ii) sum
+∇f, = Zygote.gradient(z, ) do z
+    @> forward_leaf(g, z, ii) sum
 end
 
-@info "Step3: Compute the score using Eq. 18-20"
+# @info "Step3: Compute the score using Eq. 18-20"
 
-jac = zero(adjmat)
+# jac = zero(adjmat)
 
-max_k = args.n_anomaly_nodes
-overall_max_k = max_k + 1
-adjmat = @> g.dag adjacency_matrix Matrix{Bool}
-d = size(adjmat, 1)
-ii = @> adjmat eachcol findall.()
-function get_z_rankings(za, ∇za)
-    @assert size(za, 1) == d
-    i = 1
-    scores = Vector{Float64}[]  # 1 score vector for each outlier
-    batchsize = size(za, 2)
-    for i = 1:batchsize
-        tmp = Dict(j => ∇za[j, i] * za[j, i] for j = 1:d)
-        ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]   # used
-        score = zeros(d)
-        for q in 1:max_k
-            iq = findfirst(==(ranking[q]), 1:d)
-            score[iq] = overall_max_k - q
-        end
-        push!(scores, score)
-    end
-    return scores
-end
+# max_k = args.n_anomaly_nodes
+# overall_max_k = max_k + 1
+# adjmat = @> g.dag adjacency_matrix Matrix{Bool}
+# d = size(adjmat, 1)
+# ii = @> adjmat eachcol findall.()
+# function get_z_rankings(za, ∇za)
+#     @assert size(za, 1) == d
+#     i = 1
+#     scores = Vector{Float64}[]  # 1 score vector for each outlier
+#     batchsize = size(za, 2)
+#     for i = 1:batchsize
+#         tmp = Dict(j => ∇za[j, i] * za[j, i] for j = 1:d)
+#         ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]   # used
+#         score = zeros(d)
+#         for q in 1:max_k
+#             iq = findfirst(==(ranking[q]), 1:d)
+#             score[iq] = overall_max_k - q
+#         end
+#         push!(scores, score)
+#     end
+#     return scores
+# end
 
