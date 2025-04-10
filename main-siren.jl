@@ -44,7 +44,7 @@ BSON.@load mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
 
 @info "Step1: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
 
-function diffusion_ref(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
+function reverse_diffusion(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
     time_steps = @> LinRange(1.0f0, ϵ, n_steps) collect
     Δt = time_steps[1] - time_steps[2]
     xs, ∇xs, ms, ∇ms = Euler_Maruyama_sampler(diffusion_model, init_x, time_steps, Δt, σ_max)
@@ -55,7 +55,7 @@ forwardg(x) = forward(g, x)
 
 init_z = z
 n_steps = 10
-zs, ∇zs, ms, ∇ms = diffusion_ref(diffusion_model, init_z; n_steps) |> cpu
+zs, ∇zs, ms, ∇ms = reverse_diffusion(diffusion_model, init_z; n_steps) |> cpu
 xs, ss = @> zs gpu reshape(d, :) forwardg reshape.(Ref(size(zs)))
 @≥ init_z cpu;
 # Δz for Eq. 14
@@ -80,15 +80,17 @@ end;
 
 function get_scores(∇ms, ∇f, zs, Δzs)
     scores = -∇ms .* ∇f .* Δzs
-    s_full_path = @> scores sum(dims=3) mean(dims=2) squeezeall
-    s_half_path = @> scores[:, :, 1:end÷2] sum(dims=3) mean(dims=2) squeezeall
-    s_full_path, s_half_path
+    full_path = @> scores sum(dims=3) squeezeall
+    half_path = @> scores[:, :, 1:end÷2] sum(dims=3) squeezeall
+    full_path, half_path
 end
+
+@info "Step4: Get ground truth rankings"
 
 max_k = args.n_anomaly_nodes
 overall_max_k = max_k + 1
 
-function get_z_rankings(za, ∇za)
+function get_gt_z_ranking(za, ∇za)
     @assert size(za, 1) == d
     i = 1
     scores = Vector{Float64}[]  # 1 score vector for each outlier
@@ -103,6 +105,46 @@ function get_z_rankings(za, ∇za)
         end
         push!(scores, score)
     end
+    @≥ scores hcats
     return scores
 end
+
+@info "Step5: Outlier ndcg ranking"
+
+init_z = za
+n_steps = 10
+za, ∇za, ma, ∇ma = reverse_diffusion(diffusion_model, init_z; n_steps) |> cpu
+xa, sa = @> za gpu reshape(d, :) forwardg reshape.(Ref(size(za)))
+@≥ init_z cpu;
+Δza = @> cat(init_z, za, dims=3) diff(dims=3)  # Δz for Eq. 14
+∇fa, = Zygote.gradient(gpu(reshape(za, size(za, 1), :)), ) do z
+    @> forward_leaf(g, z, ii) sum
+end;
+@≥ ∇fa cpu reshape((d, :, n_steps));
+
+anomaly_measure_full, anomaly_measure_half = get_scores(∇ma, ∇fa, za, Δza)
+
+using PythonCall
+@unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
+
+gt_ranking = get_gt_z_ranking(za[:, :, 1], ∇za[:, :, end÷2])
+@> gt_ranking mean(dims=2)
+gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
+gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
+
+round3(x) = round.(x, digits=3)
+k = 2
+results = map(1:d) do k
+    results = (;
+               ndcg_ranking_full = ndcg_score(gt_ranking', anomaly_measure_full'; k),
+               ndcg_manual_full = ndcg_score(gt_manual', anomaly_measure_full'; k),
+               ndcg_ranking_half = ndcg_score(gt_ranking', anomaly_measure_half'; k),
+               ndcg_manual_half = ndcg_score(gt_manual', anomaly_measure_half'; k),
+              )
+    map(round3 ∘ only ∘ PyArray, results)
+end
+df = DataFrame(results)
+println(df);
+
+fname = "results/random-graphs.csv"
 
