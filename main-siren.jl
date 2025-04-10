@@ -44,7 +44,7 @@ BSON.@load mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
 
 @info "Step1: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
 
-function langevine_ref(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
+function diffusion_ref(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
     time_steps = @> LinRange(1.0f0, ϵ, n_steps) collect
     Δt = time_steps[1] - time_steps[2]
     xs, ∇xs, ms, ∇ms = Euler_Maruyama_sampler(diffusion_model, init_x, time_steps, Δt, σ_max)
@@ -55,8 +55,11 @@ forwardg(x) = forward(g, x)
 
 init_z = z
 n_steps = 10
-zs, ∇zs, ms, ∇ms = langevine_ref(diffusion_model, init_z; n_steps) |> cpu
+zs, ∇zs, ms, ∇ms = diffusion_ref(diffusion_model, init_z; n_steps) |> cpu
 xs, ss = @> zs gpu reshape(d, :) forwardg reshape.(Ref(size(zs)))
+@≥ init_z cpu;
+# Δz for Eq. 14
+Δzs = @> cat(init_z, zs, dims=3) diff(dims=3)
 
 @info "Step2: Forward using the mean functions f_{i} and backprop to calculate the sensitivities"
 
@@ -69,41 +72,22 @@ g.cpds = gpu.(g.cpds)
 end;
 @≥ ∇f cpu reshape((d, :, n_steps));
 
-scores = ∇xs .* ∇f
-∇zs[:, :, 1]
-∇f[:, :, 1]
-scores[:, :, 1]
-s1 = @> scores abs.() mean(dims=[2, 3]) squeezeall
+@info "Step3: Compute the score using Eq. 14"
 
-scores = ∇ms .* ∇f
-∇ms[:, :, 1]
-∇f[:, :, 1]
-scores[:, :, 1]
-s2 = @> scores abs.() mean(dims=[2, 3]) squeezeall
-s3 = @> scores[:, :, 1:end÷2] abs.() mean(dims=[2, 3]) squeezeall
-zs
+# Compute the scores Eq. 14:
+# ξ_j(z,z′) ≈ (z_j − z_j′) Σ − s_nj(z(tk); θ) (z_j(t_i) − z_j(t_i − 1))
+# - (x-x') \int ∂f_i/∂_x_j * dx
 
-function get_score(∇ms, ∇f, zs)
-    scores = ∇ms .* ∇f
-    ∇ms[:, :, 1]
-    ∇f[:, :, 1]
-    scores[:, :, 1]
-    s2 = @> scores abs.() mean(dims=[2, 3]) squeezeall
-    s3 = @> scores[:, :, 1:end÷2] abs.() mean(dims=[2, 3]) squeezeall
-    zs
+function get_scores(∇ms, ∇f, zs, Δzs)
+    scores = -∇ms .* ∇f .* Δzs
+    s_full_path = @> scores sum(dims=3) mean(dims=2) squeezeall
+    s_half_path = @> scores[:, :, 1:end÷2] sum(dims=3) mean(dims=2) squeezeall
+    s_full_path, s_half_path
 end
-
-@info "Step3: Compute the score using the matrix Eq. 21 in appendix and einsum"
-
-# s_ij = SJ^0 - S(J^1 + ... + J^{d-1}), or
-# s_ij = S_ii(1 - ∂f_i/∂_x_j)
-score =
 
 max_k = args.n_anomaly_nodes
 overall_max_k = max_k + 1
-adjmat = @> g.dag adjacency_matrix Matrix{Bool}
-d = size(adjmat, 1)
-ii = @> adjmat eachcol findall.()
+
 function get_z_rankings(za, ∇za)
     @assert size(za, 1) == d
     i = 1
