@@ -128,8 +128,8 @@ end
 function forward_leaf(bn::BayesNet, z::AbstractMatrix{T}, ii) where T
     d = length(bn.cpds)
     batch_size = size(z, 2)
-    # xs = (zero(similar(z, 0, batch_size)), )
-    xs = []
+    xs = (zero(similar(z, 0, batch_size)), )
+    # xs = []
     for j = 1:d
         l = zeros_like(z, (1, batch_size))
         s = ones_like(z, (1, batch_size))
@@ -139,7 +139,7 @@ function forward_leaf(bn::BayesNet, z::AbstractMatrix{T}, ii) where T
             l, s = ls isa Tuple ? ls : (ls, s)
         end
         y = l + s .* z[[j], :]
-        xs = (xs..., y)
+        xs = j > 1 ? (xs..., y) : (y, )
     end
     xs[end]
 end

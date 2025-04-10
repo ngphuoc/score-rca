@@ -54,7 +54,7 @@ args = @env begin
     batchsize = 50
     lr = 1e-3  # learning rate
     n_reference_samples = 8  # n reference observations to calculate grad and shapley values, if n_reference_samples == 1 then use zero reference
-    n_timesteps = 100
+    n_timesteps = 10
     perturbed_scale = 1f0
     decay = 1e-5  # weight decay parameter for AdamW
     epochs = 300

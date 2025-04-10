@@ -50,3 +50,38 @@ fname = "results/random-graphs.csv"
 # CSV.write(fname, df, header=!isfile(fname), append=true)
 
 
+function get_sensitivities_minibatch(g, zs, ii)
+    ∇fs = similar(zs)
+    size_zs = size(zs)
+    for t = 1:size(zs)[end]
+        ∇f, = Zygote.gradient(gpu(zs[:, :, t], )) do z
+            @> forward_leaf(g, z, ii) sum
+        end;
+        ∇fs[:, :, t] .= cpu(∇f)
+    end
+    ∇fs
+end
+
+
+using BenchmarkTools
+
+# Return jacobian w.r.t. input
+function get_sensitivities(g, zs, ii)
+    zs_gpu = gpu(reshape(zs, size(zs, 1), :))
+    ys, ss = forward(g, zs_gpu, ii)
+    ys, back = Zygote.pullback(zs_gpu) do zs_gpu
+        ys, ss = forward(g, zs_gpu, ii)
+        ys
+    end
+    J = zeros(Float32, (d, d, size(zs_gpu)[end]))
+    for i = 1:d
+        seed = zeros_like(ys)
+        seed[i, :] .= 1f0
+        b1 = back(seed)[1]  # back(seed) returns a tuple, @show i, sum(b1)
+        J[i, :, :] .= @> b1 cpu
+    end
+    J
+end
+
+J = get_sensitivities(g, zs, ii);
+J[end, :, :] ≈ ∇f

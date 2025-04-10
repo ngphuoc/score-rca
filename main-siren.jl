@@ -47,52 +47,78 @@ BSON.@load mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
 function langevine_ref(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
     time_steps = @> LinRange(1.0f0, ϵ, n_steps) collect
     Δt = time_steps[1] - time_steps[2]
-    xs, ms, ∇xs = Euler_Maruyama_sampler(diffusion_model, init_x, time_steps, Δt, σ_max)
-    return xs, ms, ∇xs
+    xs, ∇xs, ms, ∇ms = Euler_Maruyama_sampler(diffusion_model, init_x, time_steps, Δt, σ_max)
+    return xs, ∇xs, ms, ∇ms
 end
 
 forwardg(x) = forward(g, x)
 
 init_z = z
-zs, ms, ∇zs = langevine_ref(diffusion_model, init_z, n_steps = 100) |> cpu
-xs, ss = @> zs reshape(d, :) forwardg reshape.(Ref(size(zs)))
+n_steps = 10
+zs, ∇zs, ms, ∇ms = langevine_ref(diffusion_model, init_z; n_steps) |> cpu
+xs, ss = @> zs gpu reshape(d, :) forwardg reshape.(Ref(size(zs)))
 
 @info "Step2: Forward using the mean functions f_{i} and backprop to calculate the sensitivities"
 
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 ii = @> adjmat eachcol findall.()  # use global indices to avoid mutation error in autograd
-size_zs = size(zs)
-z = @> zs reshape(d, :)
-@> forward_leaf(g, z, ii) sum
+g.cpds = gpu.(g.cpds)
 
-∇f, = Zygote.gradient(z, ) do z
+∇f, = Zygote.gradient(gpu(reshape(zs, size(zs, 1), :)), ) do z
     @> forward_leaf(g, z, ii) sum
+end;
+@≥ ∇f cpu reshape((d, :, n_steps));
+
+scores = ∇xs .* ∇f
+∇zs[:, :, 1]
+∇f[:, :, 1]
+scores[:, :, 1]
+s1 = @> scores abs.() mean(dims=[2, 3]) squeezeall
+
+scores = ∇ms .* ∇f
+∇ms[:, :, 1]
+∇f[:, :, 1]
+scores[:, :, 1]
+s2 = @> scores abs.() mean(dims=[2, 3]) squeezeall
+s3 = @> scores[:, :, 1:end÷2] abs.() mean(dims=[2, 3]) squeezeall
+zs
+
+function get_score(∇ms, ∇f, zs)
+    scores = ∇ms .* ∇f
+    ∇ms[:, :, 1]
+    ∇f[:, :, 1]
+    scores[:, :, 1]
+    s2 = @> scores abs.() mean(dims=[2, 3]) squeezeall
+    s3 = @> scores[:, :, 1:end÷2] abs.() mean(dims=[2, 3]) squeezeall
+    zs
 end
 
-# @info "Step3: Compute the score using Eq. 18-20"
+@info "Step3: Compute the score using the matrix Eq. 21 in appendix and einsum"
 
-# jac = zero(adjmat)
+# s_ij = SJ^0 - S(J^1 + ... + J^{d-1}), or
+# s_ij = S_ii(1 - ∂f_i/∂_x_j)
+score =
 
-# max_k = args.n_anomaly_nodes
-# overall_max_k = max_k + 1
-# adjmat = @> g.dag adjacency_matrix Matrix{Bool}
-# d = size(adjmat, 1)
-# ii = @> adjmat eachcol findall.()
-# function get_z_rankings(za, ∇za)
-#     @assert size(za, 1) == d
-#     i = 1
-#     scores = Vector{Float64}[]  # 1 score vector for each outlier
-#     batchsize = size(za, 2)
-#     for i = 1:batchsize
-#         tmp = Dict(j => ∇za[j, i] * za[j, i] for j = 1:d)
-#         ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]   # used
-#         score = zeros(d)
-#         for q in 1:max_k
-#             iq = findfirst(==(ranking[q]), 1:d)
-#             score[iq] = overall_max_k - q
-#         end
-#         push!(scores, score)
-#     end
-#     return scores
-# end
+max_k = args.n_anomaly_nodes
+overall_max_k = max_k + 1
+adjmat = @> g.dag adjacency_matrix Matrix{Bool}
+d = size(adjmat, 1)
+ii = @> adjmat eachcol findall.()
+function get_z_rankings(za, ∇za)
+    @assert size(za, 1) == d
+    i = 1
+    scores = Vector{Float64}[]  # 1 score vector for each outlier
+    batchsize = size(za, 2)
+    for i = 1:batchsize
+        tmp = Dict(j => ∇za[j, i] * za[j, i] for j = 1:d)
+        ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]   # used
+        score = zeros(d)
+        for q in 1:max_k
+            iq = findfirst(==(ranking[q]), 1:d)
+            score[iq] = overall_max_k - q
+        end
+        push!(scores, score)
+    end
+    return scores
+end
 
