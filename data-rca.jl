@@ -62,6 +62,9 @@ args = @env begin
     to_device = Flux.gpu ∘ f32
 end
 
+Random.seed!(args.seed)
+CUDA.seed!(args.seed)
+
 function sample_natural_number(; init_mass)
     current_mass = init_mass
     probability = rand()
@@ -320,9 +323,10 @@ end
 """ Load data from saved, "/data/noise_dist-data_id.bson"
 y: output mean: x ≈ y + z
 return g, normal, perturb, and outlier data
+dir="datals"
 """
 function load_data(args; dir="datals")
-    fpaths = glob("$dir/*.bson")
+    fpaths = glob("$dir/data-*.bson")
     @assert length(fpaths) > 0
     fpath = fpaths[args.data_id]
     @info "Loading " * fpath

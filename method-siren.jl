@@ -1,136 +1,138 @@
-include("denoising-score-matching.jl")
-include("plot-dsm.jl")
-include("lib/diffusion.jl")
+using Flux, CUDA, MLUtils, EndpointRanges
+include("lib/utils.jl")
+include("dsm-model.jl")
 
-@info "#-- 1. collapse data"
+@info "Step1: Train diffusion model"
 
-# multiple siren models with different hyperparams
-# hidden size
-# fourier_scale
-# sigma
-# visualize 2d gradient field
+@≥ z, x, l, s, z3, x3, l3, s3, za, xa, la, sa gpu.()
+d = size(z, 1)
 
-z = ε
-@> ε mean(dims=2)
-@> ε std(dims=2)
+H = args.hidden_dim
+σ_max = 4std(za)  # args.σ_max
+fourier_scale = 2σ_max  # args.fourier_scale
+net = ConditionalChain(
+                 Parallel(.+, Dense(d, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+                 Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
+                 Dense(H, d),
+                )
+diffusion_model = @> DSM(args.σ_max, net) gpu
 
-@≥ z vec transpose;
-@≥ z, x, xa, ε, εa args.to_device.()
-
-@info "#-- 2. train score function on data with mean removed"
-
-σ_max = 2std(εa)
-fourier_scale = 2σ_max
-hidden_dim = 50
-dnet = train_dsm(DSM(
-                     σ_max,
-                     ConditionalChain(
-                                      Parallel(.+, Dense(1, hidden_dim), Chain(RandomFourierFeatures(hidden_dim, fourier_scale), Dense(hidden_dim, hidden_dim))), swish,
-                                      Dense(hidden_dim, 1),
-                                     )
-                    ), z; args)
-
-# TODO: mixture of scales
-function get_score(dnet, x)
-    t = 0.01ones_like(x) .* (1f0 - 1f-5) .+ 1f-5  # same t for j and paj
-    # σ_t = expand_dims(marginal_prob_std(t; args.σ_max), 1)
-    @> dnet(x, t)
+mpath = replace(fpath, "/data-" => "/model-")
+if !isfile(mpath)
+    diffusion_model = train_dsm(diffusion_model, z; args)
+    @≥ diffusion_model, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa cpu.()
+    @info "Saving diffusion model to $mpath"
+    BSON.@save mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
 end
+@info "Loading diffusion model from $mpath"
+BSON.@load mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
+@≥ diffusion_model, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa gpu.()
 
-get_scores(dnet, x) = @> get_score.([dnet], transpose.(eachrow(x))) vcats
+@info "Step2: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
 
-@info "#-- 3. reference points and outlier scores"
-
-function get_ref(x, r)
-    dist_xr = pairwise(Euclidean(), x, r)  # correct
-    _, j = @> findmin(dist_xr, dims=2)
-    @≥ j getindex.(2) vec
-    r[:, j]
-end
-
-# function setup_sampler(; reverse_steps=100, ϵ=1.0f-3)
-#     time_steps = LinRange(1.0f0, ϵ, reverse_steps)
-#     Δt = time_steps[1] - time_steps[2]
-#     return time_steps, Δt
-# end
-
-function langevine_ref(dnet, init_x; reverse_steps=100, ϵ=1.0f-3)
-    time_steps = @> LinRange(1.0f0, ϵ, reverse_steps) collect
+function reverse_diffusion(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
+    time_steps = @> LinRange(1.0f0, ϵ, n_steps) collect
     Δt = time_steps[1] - time_steps[2]
-    time_steps .= 1f-3
-    r, ∇s = Euler_Maruyama_sampler(dnet, init_x, time_steps, Δt, σ_max)
-    @≥ r reshape(size(εa))
-    @≥ ∇s reshape(size(εa)..., :)
-    return r, ∇s
+    xs, ∇xs, ms, ∇ms = Euler_Maruyama_sampler(diffusion_model, init_x, time_steps, Δt, σ_max)
+    return xs, ∇xs, ms, ∇ms
 end
 
-@info "#-- 4. ground truth ranking and results"
-# to multiply with ya
-# raw ya vs. scaling with gradient
-
-max_k = n_anomaly_nodes
-overall_max_k = max_k + 1
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
-d = size(adjmat, 1)
-ii = @> adjmat eachcol findall.()
+ii = @> adjmat eachcol findall.()  # use global indices to avoid mutation error in autograd
+g.cpds = gpu.(g.cpds)
+forwardg(x) = forward(g, x)
 
-# TODO: recheck gt ranking scores
-∇εa, = Zygote.gradient(εa, ) do εa
-    @> forward_leaf(g, εa, ii) sum
+init_z = z
+n_steps = 10
+zs, ∇zs, ms, ∇ms = reverse_diffusion(diffusion_model, init_z; n_steps) |> cpu
+xs, ss = @> zs gpu reshape(d, :) forwardg reshape.(Ref(size(zs)))
+@≥ init_z cpu;
+# Δz for Eq. 14
+Δzs = @> cat(init_z, zs, dims=3) diff(dims=3)
+
+∇f, = Zygote.gradient(gpu(reshape(zs, size(zs, 1), :)), ) do z
+    @> forward_leaf(g, z, ii) sum
+end;
+@≥ ∇f cpu reshape((d, :, n_steps));
+
+@info "Step3: Compute the score using Eq. 14"
+
+# Compute the scores Eq. 14:
+# ξ_j(z,z′) ≈ (z_j − z_j′) Σ − s_nj(z(tk); θ) (z_j(t_i) − z_j(t_i − 1))
+# - (x-x') \int ∂f_i/∂_x_j * dx
+
+function get_scores(∇ms, ∇f, zs, Δzs)
+    scores = -∇ms .* ∇f .* Δzs
+    full_path = @> scores sum(dims=3) squeezeall
+    half_path = @> scores[:, :, 1:end÷2] sum(dims=3) squeezeall
+    full_path, half_path
 end
 
-gt_value = @> get_ε_rankings(ya, ∇εa) hcats
-gt_pvalue = @> ya .* ∇εa abs.()
-@> gt_value mean(dims=2)
-anomaly_nodes
+@info "Step4: Get ground truth rankings"
 
-# μa = forward_1step_scaled(g, xa, μx, σx)
-# ε̂a = xa - μa
-# xr = get_ref(xa, x);  # reference points
-# μr = forward_1step_scaled(g, xr, μx, σx)
-# ε̂r = xr - μr
-ε̂a = εa
-init_ε = @> εa vec transpose Array
-ε̂r, ∇s = langevine_ref(dnet, init_ε)
+max_k = args.n_anomaly_nodes
+overall_max_k = max_k + 1
 
-# autograd score
+function get_gt_z_ranking(za, ∇za)
+    @assert size(za, 1) == d
+    i = 1
+    scores = Vector{Float64}[]  # 1 score vector for each outlier
+    batchsize = size(za, 2)
+    for i = 1:batchsize
+        tmp = Dict(j => ∇za[j, i] * za[j, i] for j = 1:d)
+        ranking = [k for (k, v) in sort(tmp, byvalue=true, rev=true)]   # used
+        score = zeros(d)
+        for q in 1:max_k
+            iq = findfirst(==(ranking[q]), 1:d)
+            score[iq] = overall_max_k - q
+        end
+        push!(scores, score)
+    end
+    @≥ scores hcats
+    return scores
+end
+
+@info "Step5: Outlier ndcg ranking"
+
+init_z = za
+n_steps = 10
+za, ∇za, ma, ∇ma = reverse_diffusion(diffusion_model, init_z; n_steps) |> cpu
+xa, sa = @> za gpu reshape(d, :) forwardg reshape.(Ref(size(za)))
+@≥ init_z cpu;
+Δza = @> cat(init_z, za, dims=3) diff(dims=3)  # Δz for Eq. 14
+∇fa, = Zygote.gradient(gpu(reshape(za, size(za, 1), :)), ) do z
+    @> forward_leaf(g, z, ii) sum
+end;
+@≥ ∇fa cpu reshape((d, :, n_steps));
+
+anomaly_measure_full, anomaly_measure_half = get_scores(∇ma, ∇fa, za, Δza)
 
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
+gt_ranking = get_gt_z_ranking(za[:, :, 1], ∇za[:, :, end÷2])
+@> gt_ranking mean(dims=2)
 gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
-# ndcg_score(gt_manual', abs.((ε̂a - ε̂r) .* ∇xa)', k=args.n_anomaly_nodes)
 
-@info "#-- 5. save results"
+@info "Step6: Save results"
 
-function siren_value(ε̂a, ε̂r, ∇s)
-    T = size(∇s)[end]
-    @> abs.(mean(∇s, dims=3) .* (ε̂a - ε̂r)) squeeze(3)
+round3(x) = round.(x, digits=3)
+
+k = 2
+res = map(1:d) do k
+    results = (;
+                 map(round3 ∘ only ∘ PyArray, (;
+                     ranking_full = ndcg_score(gt_ranking', anomaly_measure_full'; k),
+                     manual_full = ndcg_score(gt_manual', anomaly_measure_full'; k),
+                     ranking_half = ndcg_score(gt_ranking', anomaly_measure_half'; k),
+                     manual_half = ndcg_score(gt_manual', anomaly_measure_half'; k),
+                 ))...,
+                 k, args.data_id, args.n_nodes, args.n_anomaly_nodes, method = "SIREN", fpath,
+              )
 end
-
-function siren_value2(ε̂a, ε̂r, ∇s)
-    T = size(∇s)[end]
-    @> abs.(mean(∇s[:, :, [1, T]], dims=3) .* (ε̂a - ε̂r)) squeeze(3)
-end
-
-df = copy(dfs[1:0, :])
-
-k = 1
-# anomaly_value = abs.((∇a + ∇r) .* (ε̂a - ε̂r))
-anomaly_value = siren_value(ε̂a, ε̂r, ∇s)
-if d == 1
-    @≥ gt_value, gt_manual, gt_pvalue, anomaly_value repeat.(outer=(2, 1))
-end
-for k=1:d
-    ndcg_ranking = ndcg_score(gt_value', anomaly_value'; k)
-    ndcg_manual = ndcg_score(gt_manual', anomaly_value'; k)
-    ndcg_pvalue = ndcg_score(gt_pvalue', anomaly_value'; k)
-    @≥ ndcg_ranking, ndcg_manual, ndcg_pvalue PyArray.() only.() round.(digits=3)
-    push!(df, [args.n_nodes, args.n_anomaly_nodes, "SIREN", string(args.noise_dist), args.data_id, ndcg_ranking, ndcg_manual, ndcg_pvalue, k])
-end
-
+df = DataFrame(res)
 println(df);
 
-append!(dfs, df)
+append!(results, res)
 

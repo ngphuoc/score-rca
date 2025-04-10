@@ -1,29 +1,23 @@
-# TODO:
-# v Train score functions separately for each node
-# v Compute sensitivities wrt each node
-# ? Inverse noises
-# - Compute rca score by combining scores and sensitivities
-
 using Flux, CUDA, MLUtils, EndpointRanges
-include("data-rca.jl")
 include("lib/utils.jl")
 include("dsm-model.jl")
 
+include("data-rca.jl")
+
+@info "Step0: Load data"
+
 g, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa, anomaly_nodes, fpath = load_data(args; dir="datals");
 d = size(x, 1)
-g.cpds[1]
-g.cpds[2]
-
-@info "# Inputs Score function estimators s_{j}^{i}, mean functions f_{i}, observation X with outlier observed at the leaf X_{n}"
-
 @assert x ≈ l + s .* z
 z = (x - l) ./ s
 @≥ z, x, l, s, z3, x3, l3, s3, za, xa, la, sa gpu.()
 d = size(z, 1)
 
-# Train score function on data with mean removed"
+@info "Step1: Train diffusion model"
 
-H, fourier_scale = args.hidden_dim, args.fourier_scale
+H = args.hidden_dim,
+σ_max = 4std(za)  # args.σ_max
+fourier_scale = 2σ_max  # args.fourier_scale
 net = ConditionalChain(
                  Parallel(.+, Dense(d, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
                  Parallel(.+, Dense(H, H), Chain(RandomFourierFeatures(H, fourier_scale), Dense(H, H))), swish,
@@ -42,7 +36,7 @@ end
 BSON.@load mpath args diffusion_model g z x l s z3 x3 l3 s3 za xa la sa
 @≥ diffusion_model, z, x, l, s, z3, x3, l3, s3, za, xa, la, sa gpu.()
 
-@info "Step1: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
+@info "Step2: Sampling k in-distribution points Xs and k diffusion trajectories X_{t} by inversing the noise z_{j} and reverse diffusion from z_{j}"
 
 function reverse_diffusion(diffusion_model, init_x; n_steps = 100, σ_max = args.σ_max, ϵ = 1f-3)
     time_steps = @> LinRange(1.0f0, ϵ, n_steps) collect
@@ -60,8 +54,6 @@ xs, ss = @> zs gpu reshape(d, :) forwardg reshape.(Ref(size(zs)))
 @≥ init_z cpu;
 # Δz for Eq. 14
 Δzs = @> cat(init_z, zs, dims=3) diff(dims=3)
-
-@info "Step2: Forward using the mean functions f_{i} and backprop to calculate the sensitivities"
 
 adjmat = @> g.dag adjacency_matrix Matrix{Bool}
 ii = @> adjmat eachcol findall.()  # use global indices to avoid mutation error in autograd
@@ -132,10 +124,13 @@ gt_ranking = get_gt_z_ranking(za[:, :, 1], ∇za[:, :, end÷2])
 gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
 gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 
+@info "Step6: Save results"
+
 round3(x) = round.(x, digits=3)
+
 k = 2
 results = map(1:d) do k
-    results = (;
+    results = (; fpath, args.n_nodes, args.n_anomaly_nodes, method = "SIREN",
                ndcg_ranking_full = ndcg_score(gt_ranking', anomaly_measure_full'; k),
                ndcg_manual_full = ndcg_score(gt_manual', anomaly_measure_full'; k),
                ndcg_ranking_half = ndcg_score(gt_ranking', anomaly_measure_half'; k),

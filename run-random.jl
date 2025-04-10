@@ -17,16 +17,7 @@ g, x, _, xa, _, _, _, ε, _, εa, _, _, anomaly_nodes = load_normalised_data(arg
 fname = "results/random-graph-v2.csv"
 rm(fname, force=true)
 
-dfs = DataFrame(
-               n_nodes = Int[],
-               n_anomaly_nodes = Int[],
-               method = String[],
-               noise_dist  = String[],
-               data_id = Int[],
-               ndcg_ranking = Float64[],
-               ndcg_manual = Float64[],
-               k = Int[],
-              )
+results = []
 
 g, nodes, x, ε, xa, εa, anomaly_node, μx, σx = micro_service_data(; args);
 include("method-siren.jl")
