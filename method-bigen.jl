@@ -10,8 +10,6 @@ g = bn
 
 @info "Step2: define residual function as outlier scores"
 
-μx = forward_1step(bn, x)
-
 function get_residual(bn, x)
     μx = forward_1step(bn, x)
     x - μx
@@ -20,7 +18,7 @@ end
 ẑx = get_residual(bn, x)
 vx = abs.(ẑx)  # anomaly_measure
 
-@info "Step4: Get ground truth rankings"
+@info "Step3: Get ground truth rankings"
 
 max_k = args.n_anomaly_nodes
 overall_max_k = max_k + 1
@@ -55,7 +53,7 @@ gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
 @info "Step5: Outlier ndcg ranking"
 
 μa = forward_1step(g, xa)
-a = xa - μa
+ẑa = xa - μa
 anomaly_measure = abs.(get_residual(bn, xa))  # anomaly_measure
 anomaly_measure_full = anomaly_measure_half = anomaly_measure
 
@@ -80,3 +78,4 @@ end
 
 append!(results, res)
 nothing
+
