@@ -31,33 +31,6 @@ function forward_1step(j::Int; g, x)
     y = forward(cpd, x[paj, :])
 end
 
-function forward_1step_scaled(g::BayesNet, x::AbstractMatrix{T}, μx, σx) where T
-    d = @> g.dag adjacency_matrix size(1)
-    @> forward_1step_scaled.(1:d; g, x, μx, σx) vcats
-end
-
-function forward_1step_scaled(j::Int; g, x, μx, σx)
-    cpd = g.cpds[j]
-    paj = @> g.dag adjacency_matrix Matrix{Bool} getindex(:, j)
-    parent_child(x) = x[paj, :], x[[j], :]
-    xs, μs, σs = @> x, μx, σx parent_child.()
-    y = forward_scaled(cpd, xs, μs, σs)
-end
-
-""" using input pairs to simplify args
-"""
-function forward_scaled(cpd, xs, μs, σs)
-    x1 = @. xs[1] * σs[1] + μs[1]
-    x2 = forward(cpd, x1)
-    @. (x2 - μs[2]) / σs[2]
-end
-
-function forward_scaled(cpd, x, μx, σx, μy, σy)
-    x0 = @. x * σx + μx
-    y = forward(cpd, x0)
-    @. (y - μy) / σy
-end
-
 function forward(cpd::RootCPD, x::AbstractArray{T}) where T
     μ = zero(similar(x, 1, size(x, 2)))
 end

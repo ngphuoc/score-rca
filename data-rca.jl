@@ -343,3 +343,5 @@ end
 # generate_data_timeit(args)
 # plot_data(args)
 
+round3(x) = round.(x, digits=3)
+

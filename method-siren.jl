@@ -92,8 +92,19 @@ function get_gt_z_ranking(za, ∇za)
     return scores
 end
 
+∇za, = Zygote.gradient(za, ) do za
+    @> forward_leaf(g, za, ii) sum
+end
+@≥ za, ∇za cpu
+gt_ranking = get_gt_z_ranking(za, ∇za)
+# gt_ranking = get_gt_z_ranking(za[:, :, 1], ∇za[:, :, end÷2])
+@> gt_ranking mean(dims=2)
+gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
+gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
+
 @info "Step5: Outlier ndcg ranking"
 
+@≥ za gpu
 init_z = za
 n_steps = 10
 za, ∇za, ma, ∇ma = reverse_diffusion(diffusion_model, init_z; n_steps) |> cpu
@@ -110,14 +121,7 @@ anomaly_measure_full, anomaly_measure_half = get_scores(∇ma, ∇fa, za, Δza)
 using PythonCall
 @unpack ndcg_score, classification_report, roc_auc_score, r2_score = pyimport("sklearn.metrics")
 
-gt_ranking = get_gt_z_ranking(za[:, :, 1], ∇za[:, :, end÷2])
-@> gt_ranking mean(dims=2)
-gt_manual = indexin(1:d, anomaly_nodes) .!= nothing
-gt_manual = repeat(gt_manual, outer=(1, size(xa, 2)))
-
 @info "Step6: Save results"
-
-round3(x) = round.(x, digits=3)
 
 k = 2
 res = map(1:d) do k
@@ -131,8 +135,7 @@ res = map(1:d) do k
                  k, args.data_id, args.n_nodes, args.n_anomaly_nodes, method = "SIREN", fpath,
               )
 end
-df = DataFrame(res)
-println(df);
+@> DataFrame(res) println
 
 append!(results, res)
 
