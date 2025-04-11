@@ -37,6 +37,7 @@ export
     NonlinearGaussianCPD,             # Normal with linear mean
     NonlinearScoreCPD,             # Normal with linear mean
     LinearBayesianCPD,             # Normal with linear mean
+    LastLinearBayesianCPD,             # Normal with linear mean
     ConditionalLinearGaussianCPD,  # a LinearGaussianCPD lookup based on discrete parental assignment
     DiscreteCPD,                   # a typealias to CategoricalCPD{Categorical}
 
@@ -173,6 +174,7 @@ include("linear_cpd.jl")
 include("mlp_gaussian_cpd.jl")
 include("nonlinear_score_cpd.jl")
 include("linear_bayesian_cpd.jl")
+include("last_linear_bayesian_cpd.jl")
 include("conditional_linear_gaussian_cpd.jl")
 
 end # module CPDs

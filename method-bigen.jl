@@ -3,7 +3,21 @@
 @≥ z, x, l, s, z3, x3, l3, s3, za, xa, la, sa cpu.()
 d = size(z, 1)
 
-bn = copy_bayesian_dag(g)
+function copy_last_bayesian_dag(g0)
+    bn = deepcopy(g0)
+    bn.cpds
+    for i = 1:length(bn.cpds)
+        cpd = bn.cpds[i]
+        if length(cpd.parents) > 0
+            bn.cpds[i] = LinearBayesianCPD(cpd.target, cpd.parents)
+        end
+    end
+    bn
+end
+
+
+# bn = copy_bayesian_dag(g)
+bn = copy_last_bayesian_dag(g)
 bn.cpds = cpu.(bn.cpds)
 Distributions.fit!(bn, x)
 g = bn

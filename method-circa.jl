@@ -1,4 +1,4 @@
-@info "#-- 1. fit linear bayesnet"
+@info "Step1: fit linear bayesnet"
 
 @≥ z, x, l, s, z3, x3, l3, s3, za, xa, la, sa cpu.()
 d = size(z, 1)
